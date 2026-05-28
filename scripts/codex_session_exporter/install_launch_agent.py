@@ -45,6 +45,34 @@ def default_obsidian_link_path() -> Path | None:
     return None
 
 
+def default_output_root() -> Path:
+    """Auto-detect the Obsidian vault and return `<vault>/agent-logs`.
+
+    Logs are written directly inside the vault so Obsidian indexes them
+    natively (no symlink layer). Falls back to a hidden local path when no
+    vault is detected; users without a vault should set
+    `AGENT_LOGS_OUTPUT_ROOT` or `OBSIDIAN_VAULT` explicitly.
+    """
+    explicit = os.environ.get("AGENT_LOGS_OUTPUT_ROOT")
+    if explicit:
+        return Path(explicit).expanduser()
+
+    vault = os.environ.get("OBSIDIAN_VAULT") or os.environ.get("OBSIDIAN_VAULT_PATH")
+    if vault:
+        return Path(vault).expanduser() / "agent-logs"
+
+    icloud_obsidian = Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents"
+    if icloud_obsidian.exists():
+        designc = icloud_obsidian / "DesignC"
+        if designc.exists():
+            return designc / "개발" / "agent-logs"
+        vaults = [path for path in icloud_obsidian.iterdir() if path.is_dir()]
+        if len(vaults) == 1:
+            return vaults[0] / "agent-logs"
+
+    return Path.home() / ".local" / "share" / "agent-conversation-logger" / "agent-logs"
+
+
 def build_launch_agent_plist(
     *,
     label: str,

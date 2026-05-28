@@ -145,7 +145,7 @@ def row_to_event(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def markdown_path(output_root: Path, session_id: str) -> Path:
-    return output_root / "claude-code" / session_id / "transcript.md"
+    return output_root / "claude-logs" / session_id / "transcript.md"
 
 
 def ensure_markdown(path: Path, *, session_id: str, source_path: Path, hook_input: dict[str, Any]) -> None:

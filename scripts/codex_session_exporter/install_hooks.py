@@ -17,6 +17,7 @@ from codex_session_exporter.install_launch_agent import (
     LEGACY_LABELS,
     choose_python_path,
     default_obsidian_link_path,
+    default_output_root,
     ensure_obsidian_symlink,
     uninstall_launch_agent,
 )
@@ -29,7 +30,6 @@ def _default_claude_config_dir() -> Path:
     return Path(os.environ.get("CLAUDE_CONFIG_DIR") or (Path.home() / ".claude"))
 
 
-DEFAULT_CLAUDE_OUTPUT_ROOT = _default_claude_config_dir() / "agent-conversation-logger" / "output"
 DEFAULT_CLAUDE_HOOK_EVENTS = ("SessionStart", "UserPromptSubmit", "PostToolUse", "Stop")
 
 
@@ -72,32 +72,36 @@ def hook_command(*, python_path: Path, exporter_path: Path, codex_home: Path, ou
 def install_hooks(
     *,
     codex_home: Path = DEFAULT_CODEX_HOME,
-    output_root: Path = DEFAULT_LAUNCHD_OUTPUT_ROOT,
+    output_root: Path | None = None,
     python_path: Path | None = None,
     obsidian_link: Path | None = None,
-    create_obsidian_link: bool = True,
+    create_obsidian_link: bool = False,
     events: tuple[str, ...] = DEFAULT_HOOK_EVENTS,
     remove_launch_agent: bool = True,
     trust: bool = True,
     install_claude: bool = True,
     claude_config_dir: Path | None = None,
-    claude_output_root: Path = DEFAULT_CLAUDE_OUTPUT_ROOT,
+    claude_output_root: Path | None = None,
     claude_obsidian_link: Path | None = None,
-    create_claude_obsidian_link: bool = True,
+    create_claude_obsidian_link: bool = False,
     claude_events: tuple[str, ...] = DEFAULT_CLAUDE_HOOK_EVENTS,
 ) -> dict[str, Any]:
+    if output_root is None:
+        output_root = default_output_root()
+    if claude_output_root is None:
+        claude_output_root = default_output_root()
     repo_root = Path(__file__).resolve().parents[1]
     source_exporter_path = repo_root / "codex_session_exporter" / "exporter.py"
     runtime_dir = codex_home / "codex-session-exporter"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     exporter_path = runtime_dir / "exporter.py"
     shutil.copy2(source_exporter_path, exporter_path)
-    resolved_obsidian_link = None
-    if create_obsidian_link:
-        resolved_obsidian_link = obsidian_link if obsidian_link is not None else default_obsidian_link_path()
+    resolved_obsidian_link = obsidian_link
+    if resolved_obsidian_link is None and create_obsidian_link:
+        resolved_obsidian_link = default_obsidian_link_path()
     obsidian_backup = None
     if resolved_obsidian_link is not None:
-        codex_live_dir = output_root / "codex"
+        codex_live_dir = output_root / "codex-logs"
         codex_live_dir.mkdir(parents=True, exist_ok=True)
         obsidian_backup = ensure_obsidian_symlink(resolved_obsidian_link, codex_live_dir)
     resolved_python_path = python_path or choose_python_path()
@@ -250,7 +254,7 @@ def install_claude_code_hooks(
             "expected_logger_path": str(logger_path),
         }
     output_root.mkdir(parents=True, exist_ok=True)
-    (output_root / "claude-code").mkdir(parents=True, exist_ok=True)
+    (output_root / "claude-logs").mkdir(parents=True, exist_ok=True)
     (output_root / "data").mkdir(parents=True, exist_ok=True)
     (output_root / "state").mkdir(parents=True, exist_ok=True)
 
@@ -264,12 +268,12 @@ def install_claude_code_hooks(
     settings_path = claude_config_dir / "settings.json"
     settings_backup = update_claude_settings_json(settings_path, command, events)
 
-    resolved_link = None
-    if create_obsidian_link:
-        resolved_link = obsidian_link if obsidian_link is not None else default_claude_obsidian_link_path()
+    resolved_link = obsidian_link
+    if resolved_link is None and create_obsidian_link:
+        resolved_link = default_claude_obsidian_link_path()
     obsidian_backup = None
     if resolved_link is not None:
-        claude_live_dir = output_root / "claude-code"
+        claude_live_dir = output_root / "claude-logs"
         claude_live_dir.mkdir(parents=True, exist_ok=True)
         obsidian_backup = ensure_obsidian_symlink(resolved_link, claude_live_dir)
 
@@ -478,15 +482,15 @@ def app_server_request_sequence(requests: list[dict[str, Any]]) -> dict[int, dic
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Install Codex and Claude Code lifecycle hooks for conversation logging.")
     parser.add_argument("--codex-home", type=Path, default=DEFAULT_CODEX_HOME)
-    parser.add_argument("--output-root", type=Path, default=DEFAULT_LAUNCHD_OUTPUT_ROOT)
+    parser.add_argument("--output-root", type=Path, default=None, help="Codex log output root. Defaults to <vault>/agent-logs when an Obsidian vault is detected.")
     parser.add_argument("--python", dest="python_path", type=Path, default=None)
-    parser.add_argument("--obsidian-link", type=Path, default=None)
+    parser.add_argument("--obsidian-link", type=Path, default=None, help="Optional Obsidian symlink (only needed when --output-root is outside the vault).")
     parser.add_argument("--no-obsidian-link", action="store_true")
     parser.add_argument("--no-remove-launch-agent", action="store_true")
     parser.add_argument("--no-trust", action="store_true")
     parser.add_argument("--no-claude", action="store_true", help="Skip Claude Code logger installation.")
     parser.add_argument("--claude-config-dir", type=Path, default=None)
-    parser.add_argument("--claude-output-root", type=Path, default=DEFAULT_CLAUDE_OUTPUT_ROOT)
+    parser.add_argument("--claude-output-root", type=Path, default=None, help="Claude Code log output root. Defaults to <vault>/agent-logs when an Obsidian vault is detected.")
     parser.add_argument("--claude-obsidian-link", type=Path, default=None)
     parser.add_argument("--no-claude-obsidian-link", action="store_true")
     return parser
@@ -499,14 +503,14 @@ def main(argv: list[str] | None = None) -> int:
         output_root=args.output_root,
         python_path=args.python_path,
         obsidian_link=None if args.no_obsidian_link else args.obsidian_link,
-        create_obsidian_link=not args.no_obsidian_link,
+        create_obsidian_link=bool(args.obsidian_link) and not args.no_obsidian_link,
         remove_launch_agent=not args.no_remove_launch_agent,
         trust=not args.no_trust,
         install_claude=not args.no_claude,
         claude_config_dir=args.claude_config_dir,
         claude_output_root=args.claude_output_root,
         claude_obsidian_link=None if args.no_claude_obsidian_link else args.claude_obsidian_link,
-        create_claude_obsidian_link=not args.no_claude_obsidian_link,
+        create_claude_obsidian_link=bool(args.claude_obsidian_link) and not args.no_claude_obsidian_link,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
