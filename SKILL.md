@@ -119,6 +119,58 @@ Use `--force` only for intentional rebuilds. Don't pass `--include-developer-pro
 
 If live transcripts exist but normalized tables do not, the conversation **was captured**; only the analysis table refresh is pending.
 
+## Common Transcript Schema
+
+Both Codex and Claude Code transcripts share the same Markdown structure so a single renderer can read either:
+
+```
+---
+<YAML frontmatter — session_id, agent, started_at, source_path, cwd?, tags[]>
+---
+
+# <Title>
+
+> <optional blockquote>
+
+## <ISO8601 timestamp> - <KIND>[ `<identifier>`]
+
+[- <key>: <value>]     ← 0+ metadata bullets
+[<blank line>]
+[```<lang>              ← 0/1 fenced code block
+<body>
+```]
+```
+
+- **KIND** ∈ `USER`, `ASSISTANT`, `SYSTEM`, `TOOL CALL`, `TOOL OUTPUT`
+- **identifier** — `TOOL CALL`/`TOOL OUTPUT` only. Tool name for `TOOL CALL`, `tool_use_id` (Claude Code) / `call_id` (Codex) for `TOOL OUTPUT`.
+- **metadata bullets** — `- tool_use_id: \`...\``, `- call_id: \`...\``, `- exit_code: \`...\``, `- is_error: \`true\``
+
+Claude Code unwraps tool_use / tool_result parts buried inside assistant/user messages into their own sections — so tool invocations are first-class events, not text inside a message bubble.
+
+## Render To HTML
+
+Convert a `transcript.md` into a self-contained, messenger-style HTML viewer (CSS + JS inlined, no server needed):
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/render_html.py" <vault>/agent-logs/claude-logs/<session_id>/transcript.md
+# → writes transcript.html next to the .md
+```
+
+Render every transcript under a directory:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/render_html.py" <vault>/agent-logs --recursive
+```
+
+The HTML viewer:
+
+- USER messages right-aligned (iMessage blue), ASSISTANT left-aligned (light bubble)
+- TOOL CALL / TOOL OUTPUT as collapsible cards with metadata (`tool_use_id`, `call_id`, `exit_code`, `is_error`) and the pretty-printed input/output body
+- Toolbar: client-side filter, "Expand all tools" toggle, "Copy link"
+- Day dividers, frontmatter card with stats, dark mode follows `prefers-color-scheme`
+
+Open the resulting HTML in any browser (`open <path>` on macOS).
+
 ## Source Repository
 
 Version-controlled at <https://github.com/miridih-jmyou/agent-conversation-logger>. Treat the local skill directory as a working copy of that repo.

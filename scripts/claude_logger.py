@@ -86,6 +86,8 @@ def wait_for_stable_file(path: Path, *, timeout_seconds: float = 2.0, quiet_seco
 
 
 def text_from_content(content: Any) -> str:
+    """Flatten a list-of-parts content into plain text. Skips tool_use/tool_result
+    parts — those are emitted as separate events by row_to_events()."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -94,10 +96,7 @@ def text_from_content(content: Any) -> str:
             if isinstance(item, dict):
                 if item.get("type") == "text":
                     parts.append(str(item.get("text", "")))
-                elif item.get("type") == "tool_use":
-                    parts.append(f"[tool_use {item.get('name', '')}] {json.dumps(item.get('input', {}), ensure_ascii=False)}")
-                elif item.get("type") == "tool_result":
-                    parts.append(f"[tool_result {item.get('tool_use_id', '')}] {text_from_content(item.get('content'))}")
+                # tool_use / tool_result are handled at the event level, not inlined here.
             else:
                 parts.append(str(item))
         return "\n".join(part for part in parts if part)
@@ -106,42 +105,77 @@ def text_from_content(content: Any) -> str:
     return str(content) if content is not None else ""
 
 
-def row_to_event(row: dict[str, Any]) -> dict[str, Any] | None:
+def row_to_events(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expand one raw jsonl row into 0+ structured events.
+
+    Anthropic message content is a list of typed parts; we emit one event per
+    semantically distinct part so the transcript carries TOOL CALL / TOOL OUTPUT
+    sections instead of burying tool calls inside an assistant text block.
+    """
     row_type = row.get("type")
+    if row_type not in ("user", "assistant"):
+        return []
+    if row_type == "user" and row.get("isMeta"):
+        return []
     timestamp = str(row.get("timestamp") or now_utc())
-    if row_type == "user":
-        if row.get("isMeta"):
-            return None
-        message = row.get("message")
-        content = message.get("content") if isinstance(message, dict) else row.get("content")
+    message = row.get("message")
+    content = message.get("content") if isinstance(message, dict) else row.get("content")
+
+    if not isinstance(content, list):
         text = text_from_content(content)
         if not text:
-            return None
-        return {"timestamp": timestamp, "kind": "message", "role": "user", "text": redact(text)}
-    if row_type == "assistant":
-        message = row.get("message")
-        content = message.get("content") if isinstance(message, dict) else row.get("content")
-        text = text_from_content(content)
-        if not text:
-            return None
-        return {"timestamp": timestamp, "kind": "message", "role": "assistant", "text": redact(text)}
-    if row_type == "tool_use":
-        return {
-            "timestamp": timestamp,
-            "kind": "tool_call",
-            "name": str(row.get("tool_name") or ""),
-            "text": redact(json.dumps(row.get("tool_input", {}), ensure_ascii=False)),
-        }
-    if row_type == "tool_result":
-        output = row.get("tool_output")
-        text = output.get("output") if isinstance(output, dict) else output
-        return {
-            "timestamp": timestamp,
-            "kind": "tool_output",
-            "name": str(row.get("tool_name") or ""),
-            "text": redact(str(text or "")),
-        }
-    return None
+            return []
+        return [{"timestamp": timestamp, "kind": "message", "role": row_type, "text": redact(text)}]
+
+    events: list[dict[str, Any]] = []
+    text_buffer: list[str] = []
+
+    def _flush_text() -> None:
+        if not text_buffer:
+            return
+        text = "\n".join(part for part in text_buffer if part).strip()
+        text_buffer.clear()
+        if text:
+            events.append(
+                {"timestamp": timestamp, "kind": "message", "role": row_type, "text": redact(text)}
+            )
+
+    for item in content:
+        if not isinstance(item, dict):
+            text_buffer.append(str(item))
+            continue
+        item_type = item.get("type")
+        if item_type == "text":
+            text_buffer.append(str(item.get("text", "")))
+        elif item_type == "tool_use":
+            _flush_text()
+            events.append(
+                {
+                    "timestamp": timestamp,
+                    "kind": "tool_call",
+                    "name": str(item.get("name") or ""),
+                    "tool_use_id": str(item.get("id") or ""),
+                    "text": redact(json.dumps(item.get("input", {}), ensure_ascii=False)),
+                }
+            )
+        elif item_type == "tool_result":
+            _flush_text()
+            inner = item.get("content")
+            output_text = text_from_content(inner) if not isinstance(inner, str) else inner
+            events.append(
+                {
+                    "timestamp": timestamp,
+                    "kind": "tool_output",
+                    "tool_use_id": str(item.get("tool_use_id") or ""),
+                    "is_error": bool(item.get("is_error")),
+                    "text": redact(str(output_text or "")),
+                }
+            )
+        else:
+            text_buffer.append(json.dumps(item, ensure_ascii=False))
+
+    _flush_text()
+    return events
 
 
 def markdown_path(output_root: Path, session_id: str) -> Path:
@@ -186,12 +220,22 @@ def append_events(markdown: Path, event_jsonl: Path, *, session_id: str, source_
                 md.write(str(event.get("text", ""))[:12000])
                 md.write("\n```\n\n")
             elif kind == "tool_call":
+                tool_use_id = str(event.get("tool_use_id") or "")
                 md.write(f"## {timestamp} - TOOL CALL `{event.get('name', '')}`\n\n")
+                if tool_use_id:
+                    md.write(f"- tool_use_id: `{tool_use_id}`\n\n")
                 md.write("```json\n")
                 md.write(str(event.get("text", ""))[:12000])
                 md.write("\n```\n\n")
             elif kind == "tool_output":
-                md.write(f"## {timestamp} - TOOL OUTPUT `{event.get('name', '')}`\n\n")
+                tool_use_id = str(event.get("tool_use_id") or "")
+                identifier = tool_use_id or "result"
+                md.write(f"## {timestamp} - TOOL OUTPUT `{identifier}`\n\n")
+                if tool_use_id:
+                    md.write(f"- tool_use_id: `{tool_use_id}`\n")
+                if event.get("is_error"):
+                    md.write(f"- is_error: `true`\n")
+                md.write("\n")
                 md.write("```text\n")
                 md.write(str(event.get("text", ""))[:12000])
                 md.write("\n```\n\n")
@@ -230,7 +274,7 @@ def append_from_hook(hook_input: dict[str, Any], output_root: Path, hook_log: Pa
     key = str(source_path)
     offset = int(offsets.get(key, 0))
     rows, new_offset = parse_complete_jsonl_rows(source_path, offset)
-    events = [event for row in rows if (event := row_to_event(row))]
+    events = [event for row in rows for event in row_to_events(row)]
     md_path = markdown_path(output_root, session_id)
     ensure_markdown(md_path, session_id=session_id, source_path=source_path, hook_input=hook_input)
     append_events(md_path, output_root / "data" / "claude_live_events.jsonl", session_id=session_id, source_path=source_path, events=events)

@@ -501,16 +501,22 @@ def live_event_to_markdown(event: dict[str, Any]) -> str:
     if kind == "tool_call":
         name = event.get("name") or "tool"
         command = event.get("command")
-        body = f"- call_id: `{event.get('call_id')}`\n"
+        arguments = event.get("arguments")
+        meta = f"- call_id: `{event.get('call_id')}`\n"
         if command:
-            body += f"- command: `{command}`\n"
+            body = f"```text\n{command}\n```\n"
+        elif arguments:
+            body = f"```json\n{arguments}\n```\n"
         else:
-            body += f"- arguments: `{event.get('arguments')}`\n"
-        return f"\n## {timestamp} - TOOL CALL `{name}`\n\n{body}"
+            body = ""
+        return f"\n## {timestamp} - TOOL CALL `{name}`\n\n{meta}\n{body}"
     if kind == "tool_output":
         exit_code = event.get("exit_code")
         exit_text = "-" if exit_code is None else str(exit_code)
-        return f"\n## {timestamp} - TOOL OUTPUT `{event.get('call_id')}`\n\n- exit_code: `{exit_text}`\n\n```text\n{event.get('output_excerpt') or ''}\n```\n"
+        identifier = event.get("name") or event.get("call_id") or "tool"
+        meta = f"- call_id: `{event.get('call_id')}`\n- exit_code: `{exit_text}`\n"
+        body = f"```text\n{event.get('output_excerpt') or ''}\n```\n"
+        return f"\n## {timestamp} - TOOL OUTPUT `{identifier}`\n\n{meta}\n{body}"
     return ""
 
 
