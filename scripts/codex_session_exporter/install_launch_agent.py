@@ -29,7 +29,7 @@ def default_obsidian_link_path() -> Path | None:
 
     vault = os.environ.get("OBSIDIAN_VAULT") or os.environ.get("OBSIDIAN_VAULT_PATH")
     if vault:
-        return Path(vault).expanduser() / "codex-logs"
+        return Path(vault).expanduser() / "agent-logs" / "codex-logs"
 
     icloud_obsidian = Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents"
     if not icloud_obsidian.exists():
@@ -37,11 +37,11 @@ def default_obsidian_link_path() -> Path | None:
 
     designc = icloud_obsidian / "DesignC"
     if designc.exists():
-        return designc / "개발" / "codex-logs"
+        return designc / "개발" / "agent-logs" / "codex-logs"
 
     vaults = [path for path in icloud_obsidian.iterdir() if path.is_dir()]
     if len(vaults) == 1:
-        return vaults[0] / "codex-logs"
+        return vaults[0] / "agent-logs" / "codex-logs"
     return None
 
 

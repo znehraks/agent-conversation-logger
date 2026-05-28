@@ -537,7 +537,7 @@ def build_live_header(session_id: str, source_path: Path, started_at: str | None
 
 
 def live_note_path(root: Path, session_id: str, started_at: str | None) -> Path:
-    return root / "codex" / f"{session_id}.md"
+    return root / "codex" / session_id / "transcript.md"
 
 
 def read_live_append_state(path: Path) -> dict[str, Any]:

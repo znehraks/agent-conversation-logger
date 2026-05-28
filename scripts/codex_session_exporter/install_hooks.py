@@ -39,16 +39,16 @@ def default_claude_obsidian_link_path() -> Path | None:
         return Path(explicit).expanduser()
     vault = os.environ.get("OBSIDIAN_VAULT") or os.environ.get("OBSIDIAN_VAULT_PATH")
     if vault:
-        return Path(vault).expanduser() / "claude-logs"
+        return Path(vault).expanduser() / "agent-logs" / "claude-logs"
     icloud = Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents"
     if not icloud.exists():
         return None
     designc = icloud / "DesignC"
     if designc.exists():
-        return designc / "개발" / "claude-logs"
+        return designc / "개발" / "agent-logs" / "claude-logs"
     vaults = [p for p in icloud.iterdir() if p.is_dir()]
     if len(vaults) == 1:
-        return vaults[0] / "claude-logs"
+        return vaults[0] / "agent-logs" / "claude-logs"
     return None
 
 
@@ -97,7 +97,9 @@ def install_hooks(
         resolved_obsidian_link = obsidian_link if obsidian_link is not None else default_obsidian_link_path()
     obsidian_backup = None
     if resolved_obsidian_link is not None:
-        obsidian_backup = ensure_obsidian_symlink(resolved_obsidian_link, output_root)
+        codex_live_dir = output_root / "codex"
+        codex_live_dir.mkdir(parents=True, exist_ok=True)
+        obsidian_backup = ensure_obsidian_symlink(resolved_obsidian_link, codex_live_dir)
     resolved_python_path = python_path or choose_python_path()
 
     command = hook_command(
@@ -267,7 +269,9 @@ def install_claude_code_hooks(
         resolved_link = obsidian_link if obsidian_link is not None else default_claude_obsidian_link_path()
     obsidian_backup = None
     if resolved_link is not None:
-        obsidian_backup = ensure_obsidian_symlink(resolved_link, output_root)
+        claude_live_dir = output_root / "claude-code"
+        claude_live_dir.mkdir(parents=True, exist_ok=True)
+        obsidian_backup = ensure_obsidian_symlink(resolved_link, claude_live_dir)
 
     return {
         "installed": True,
