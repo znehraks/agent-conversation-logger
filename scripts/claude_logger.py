@@ -263,10 +263,20 @@ def append_events(markdown: Path, event_jsonl: Path, *, session_id: str, source_
                 md.write("\n```\n\n")
             elif kind == "tool_output":
                 call_id = str(event.get("call_id") or "")
-                identifier = call_id or "result"
+                name = str(event.get("name") or "")
+                if name and call_id:
+                    identifier = f"{name} ({call_id})"
+                elif name:
+                    identifier = name
+                elif call_id:
+                    identifier = call_id
+                else:
+                    identifier = "result"
                 md.write(f"## {timestamp} - TOOL OUTPUT `{identifier}`\n\n")
                 if call_id:
                     md.write(f"- call_id: `{call_id}`\n")
+                if name:
+                    md.write(f"- tool_name: `{name}`\n")
                 if event.get("is_error"):
                     md.write("- is_error: `true`\n")
                 md.write("\n")
@@ -305,10 +315,24 @@ def append_from_hook(hook_input: dict[str, Any], output_root: Path, hook_log: Pa
     state_path = output_root / "state" / "claude_live_append_state.json"
     state = read_json(state_path, {"offsets": {}})
     offsets = state.setdefault("offsets", {})
+    call_names = state.setdefault("call_names", {})
     key = str(source_path)
     offset = int(offsets.get(key, 0))
     rows, new_offset = parse_complete_jsonl_rows(source_path, offset)
     events = [event for row in rows for event in row_to_events(row)]
+    # Walk events in order: tool_call entries register a call_id→name mapping,
+    # later tool_output entries pick up the matching name so transcripts show
+    # `Bash (toolu_…)` instead of a bare hash.
+    for event in events:
+        if event.get("kind") == "tool_call":
+            cid = event.get("call_id")
+            name = event.get("name")
+            if cid and name:
+                call_names[str(cid)] = str(name)
+        elif event.get("kind") == "tool_output" and not event.get("name"):
+            cid = event.get("call_id")
+            if cid and str(cid) in call_names:
+                event["name"] = call_names[str(cid)]
     md_path = markdown_path(output_root, session_id)
     ensure_markdown(md_path, session_id=session_id, source_path=source_path, hook_input=hook_input)
     append_events(md_path, output_root / "data" / "claude_live_events.jsonl", session_id=session_id, source_path=source_path, events=events)

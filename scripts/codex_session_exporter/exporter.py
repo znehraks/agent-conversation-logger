@@ -313,10 +313,23 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
 
     events = []
     markdown_chunks = []
+    call_names = state.setdefault("call_names", {})
     for row in new_rows:
         event = row_to_live_event(row, session_id, path, excerpt_chars)
         if not event:
             continue
+        # Persist call_id → tool name so TOOL OUTPUT sections can display
+        # `name (call_id)` instead of a bare hash; mapping survives across hooks
+        # via the state file.
+        if event.get("kind") == "tool_call":
+            cid = event.get("call_id")
+            name = event.get("name")
+            if cid and name:
+                call_names[str(cid)] = str(name)
+        elif event.get("kind") == "tool_output" and not event.get("name"):
+            cid = event.get("call_id")
+            if cid and str(cid) in call_names:
+                event["name"] = call_names[str(cid)]
         events.append(event)
         markdown_chunks.append(live_event_to_markdown(event))
 
@@ -520,8 +533,19 @@ def live_event_to_markdown(event: dict[str, Any]) -> str:
     if kind == "tool_output":
         exit_code = event.get("exit_code")
         exit_text = "-" if exit_code is None else str(exit_code)
-        identifier = event.get("name") or event.get("call_id") or "tool"
-        meta_lines = [f"- call_id: `{event.get('call_id')}`", f"- exit_code: `{exit_text}`"]
+        name = event.get("name")
+        call_id = event.get("call_id")
+        if name and call_id:
+            identifier = f"{name} ({call_id})"
+        elif name:
+            identifier = name
+        elif call_id:
+            identifier = call_id
+        else:
+            identifier = "tool"
+        meta_lines = [f"- call_id: `{call_id}`", f"- exit_code: `{exit_text}`"]
+        if name:
+            meta_lines.append(f"- tool_name: `{name}`")
         if exit_code is not None and exit_code != 0:
             meta_lines.append("- is_error: `true`")
         meta = "\n".join(meta_lines) + "\n"

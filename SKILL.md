@@ -148,9 +148,12 @@ tags:
 ```
 
 - **KIND** ∈ `USER`, `ASSISTANT`, `SYSTEM`, `THINKING`, `TOOL CALL`, `TOOL OUTPUT`
-- **identifier** — required for `TOOL CALL` (tool name) and `TOOL OUTPUT` (call_id, matches the TOOL CALL's `call_id` metadata bullet)
-- **metadata bullets** — `- call_id: \`...\``, `- exit_code: \`...\``, `- is_error: \`true\`` (use what applies)
+- **identifier** —
+  - `TOOL CALL`: tool name (e.g. `Bash`, `exec_command`)
+  - `TOOL OUTPUT`: prefer `tool_name (call_id)` (e.g. `Bash (toolu_01SzZ4...)`); fall back to bare `call_id` when the mapping is unknown
+- **metadata bullets** — `- call_id: \`...\``, `- tool_name: \`...\`` (TOOL OUTPUT when mapped), `- exit_code: \`...\``, `- is_error: \`true\`` (use what applies)
 - `THINKING` sections carry the model's internal reasoning when present; signature-only thinking parts are dropped, never inlined as raw JSON.
+- **tool_name mapping** — Both loggers persist a `call_names: {call_id: name}` map in their state files. TOOL CALL events register the mapping; later TOOL OUTPUT events look it up so transcripts show a human-readable name instead of a bare UUID. Session-level identifiers without a natural-language counterpart (`session_id`) stay as plain UUIDs.
 
 Both loggers go through `build_frontmatter` / `build_live_header` which produce byte-identical layouts — only the values differ.
 
