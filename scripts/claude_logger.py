@@ -147,6 +147,19 @@ def row_to_events(row: dict[str, Any]) -> list[dict[str, Any]]:
         item_type = item.get("type")
         if item_type == "text":
             text_buffer.append(str(item.get("text", "")))
+        elif item_type == "thinking":
+            _flush_text()
+            thinking_text = str(item.get("thinking") or "").strip()
+            # Skip signature-only rows: emit an event only when there is real thinking text.
+            if thinking_text:
+                events.append(
+                    {
+                        "timestamp": timestamp,
+                        "kind": "thinking",
+                        "role": row_type,
+                        "text": redact(thinking_text),
+                    }
+                )
         elif item_type == "tool_use":
             _flush_text()
             events.append(
@@ -154,7 +167,7 @@ def row_to_events(row: dict[str, Any]) -> list[dict[str, Any]]:
                     "timestamp": timestamp,
                     "kind": "tool_call",
                     "name": str(item.get("name") or ""),
-                    "tool_use_id": str(item.get("id") or ""),
+                    "call_id": str(item.get("id") or ""),
                     "text": redact(json.dumps(item.get("input", {}), ensure_ascii=False)),
                 }
             )
@@ -166,13 +179,12 @@ def row_to_events(row: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "timestamp": timestamp,
                     "kind": "tool_output",
-                    "tool_use_id": str(item.get("tool_use_id") or ""),
+                    "call_id": str(item.get("tool_use_id") or ""),
                     "is_error": bool(item.get("is_error")),
                     "text": redact(str(output_text or "")),
                 }
             )
-        else:
-            text_buffer.append(json.dumps(item, ensure_ascii=False))
+        # Silently skip unknown content parts — never dump raw JSON into the transcript.
 
     _flush_text()
     return events
@@ -187,20 +199,37 @@ def ensure_markdown(path: Path, *, session_id: str, source_path: Path, hook_inpu
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     started_at = hook_input.get("timestamp") or now_utc()
-    cwd = hook_input.get("cwd")
+    cwd = hook_input.get("cwd") or ""
     path.write_text(
-        "---\n"
-        f'session_id: "{session_id}"\n'
-        f'source_path: "{source_path}"\n'
-        f'started_at: "{started_at}"\n'
-        'agent: "claude-code"\n'
-        f'cwd: "{cwd or ""}"\n'
-        "tags:\n"
-        '  - "claude-code-live-log"\n'
-        "---\n\n"
-        f"# Claude Code Live Log - {session_id}\n\n"
-        "> Append-only refined log. Existing sections are not rewritten.\n\n",
+        build_frontmatter(
+            agent="claude-code",
+            session_id=session_id,
+            started_at=str(started_at),
+            cwd=str(cwd),
+            source_path=str(source_path),
+        )
+        + f"# Live Log - {session_id}\n\n"
+        + "> Append-only refined log. Existing sections are not rewritten.\n\n",
         encoding="utf-8",
+    )
+
+
+def build_frontmatter(*, agent: str, session_id: str, started_at: str, cwd: str, source_path: str) -> str:
+    """Common transcript frontmatter shared by both Codex and Claude Code loggers.
+
+    Key order is fixed so the two agents produce byte-identical frontmatter
+    layouts (only the values differ), making downstream tooling deterministic.
+    """
+    return (
+        "---\n"
+        f'agent: "{agent}"\n'
+        f'session_id: "{session_id}"\n'
+        f'started_at: "{started_at}"\n'
+        f'cwd: "{cwd}"\n'
+        f'source_path: "{source_path}"\n'
+        "tags:\n"
+        f'  - "{agent}-live-log"\n'
+        "---\n\n"
     )
 
 
@@ -219,22 +248,27 @@ def append_events(markdown: Path, event_jsonl: Path, *, session_id: str, source_
                 md.write("```text\n")
                 md.write(str(event.get("text", ""))[:12000])
                 md.write("\n```\n\n")
+            elif kind == "thinking":
+                md.write(f"## {timestamp} - THINKING\n\n")
+                md.write("```text\n")
+                md.write(str(event.get("text", ""))[:12000])
+                md.write("\n```\n\n")
             elif kind == "tool_call":
-                tool_use_id = str(event.get("tool_use_id") or "")
+                call_id = str(event.get("call_id") or "")
                 md.write(f"## {timestamp} - TOOL CALL `{event.get('name', '')}`\n\n")
-                if tool_use_id:
-                    md.write(f"- tool_use_id: `{tool_use_id}`\n\n")
+                if call_id:
+                    md.write(f"- call_id: `{call_id}`\n\n")
                 md.write("```json\n")
                 md.write(str(event.get("text", ""))[:12000])
                 md.write("\n```\n\n")
             elif kind == "tool_output":
-                tool_use_id = str(event.get("tool_use_id") or "")
-                identifier = tool_use_id or "result"
+                call_id = str(event.get("call_id") or "")
+                identifier = call_id or "result"
                 md.write(f"## {timestamp} - TOOL OUTPUT `{identifier}`\n\n")
-                if tool_use_id:
-                    md.write(f"- tool_use_id: `{tool_use_id}`\n")
+                if call_id:
+                    md.write(f"- call_id: `{call_id}`\n")
                 if event.get("is_error"):
-                    md.write(f"- is_error: `true`\n")
+                    md.write("- is_error: `true`\n")
                 md.write("\n")
                 md.write("```text\n")
                 md.write(str(event.get("text", ""))[:12000])

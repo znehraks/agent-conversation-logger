@@ -290,6 +290,7 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
 
     session_id = str(source_record.get("session_id") or infer_session_id_from_path(path))
     started_at = source_record.get("started_at")
+    cwd = source_record.get("cwd") or ""
     with path.open("rb") as file:
         file.seek(offset)
         raw = file.read()
@@ -299,11 +300,16 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
             payload = row.get("payload") or {}
             session_id = str(payload.get("id") or session_id)
             started_at = payload.get("timestamp") or row.get("timestamp") or started_at
+            if not cwd:
+                cwd = str(payload.get("cwd") or "")
+        elif row.get("type") == "turn_context" and not cwd:
+            payload = row.get("payload") or {}
+            cwd = str(payload.get("cwd") or cwd)
 
     markdown_path = Path(source_record.get("markdown_path") or live_note_path(root, session_id, started_at))
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     if not markdown_path.exists():
-        markdown_path.write_text(build_live_header(session_id, path, started_at), encoding="utf-8")
+        markdown_path.write_text(build_live_header(session_id, path, started_at, cwd=cwd), encoding="utf-8")
 
     events = []
     markdown_chunks = []
@@ -323,6 +329,7 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
     state["sources"][source_key] = {
         "session_id": session_id,
         "started_at": started_at,
+        "cwd": cwd,
         "offset": new_offset,
         "source_size": current_size,
         "markdown_path": str(markdown_path),
@@ -514,31 +521,41 @@ def live_event_to_markdown(event: dict[str, Any]) -> str:
         exit_code = event.get("exit_code")
         exit_text = "-" if exit_code is None else str(exit_code)
         identifier = event.get("name") or event.get("call_id") or "tool"
-        meta = f"- call_id: `{event.get('call_id')}`\n- exit_code: `{exit_text}`\n"
+        meta_lines = [f"- call_id: `{event.get('call_id')}`", f"- exit_code: `{exit_text}`"]
+        if exit_code is not None and exit_code != 0:
+            meta_lines.append("- is_error: `true`")
+        meta = "\n".join(meta_lines) + "\n"
         body = f"```text\n{event.get('output_excerpt') or ''}\n```\n"
         return f"\n## {timestamp} - TOOL OUTPUT `{identifier}`\n\n{meta}\n{body}"
+    if kind == "thinking":
+        return f"\n## {timestamp} - THINKING\n\n```text\n{event.get('text') or ''}\n```\n"
     return ""
 
 
-def build_live_header(session_id: str, source_path: Path, started_at: str | None) -> str:
-    return "\n".join(
-        [
-            "---",
-            yaml_frontmatter(
-                {
-                    "session_id": session_id,
-                    "started_at": started_at,
-                    "source_path": str(source_path),
-                    "tags": ["codex-live-log"],
-                }
-            ),
-            "---",
-            "",
-            f"# Codex Live Log - {session_id}",
-            "",
-            "> Append-only refined log. Existing sections are not rewritten.",
-            "",
-        ]
+def build_live_header(
+    session_id: str,
+    source_path: Path,
+    started_at: str | None,
+    cwd: str | None = None,
+    agent: str = "codex",
+) -> str:
+    """Common transcript frontmatter for both Codex and Claude Code loggers.
+
+    Key order is fixed (agent → session_id → started_at → cwd → source_path → tags)
+    so two agents produce byte-identical frontmatter layouts; only values differ.
+    """
+    return (
+        "---\n"
+        f'agent: "{agent}"\n'
+        f'session_id: "{session_id}"\n'
+        f'started_at: "{started_at or ""}"\n'
+        f'cwd: "{cwd or ""}"\n'
+        f'source_path: "{source_path}"\n'
+        "tags:\n"
+        f'  - "{agent}-live-log"\n'
+        "---\n\n"
+        f"# Live Log - {session_id}\n\n"
+        "> Append-only refined log. Existing sections are not rewritten.\n\n"
     )
 
 

@@ -121,7 +121,42 @@ If live transcripts exist but normalized tables do not, the conversation **was c
 
 ## Common Transcript Schema
 
-Both Codex and Claude Code transcripts share the same Markdown structure so a single renderer can read either:
+Both Codex and Claude Code transcripts share the **same Markdown structure with identical frontmatter keys (in the same order)** so a single renderer can read either:
+
+```
+---
+agent: "codex" | "claude-code"
+session_id: "<uuid>"
+started_at: "<iso8601>"
+cwd: "<path>"
+source_path: "<raw jsonl path>"
+tags:
+  - "<agent>-live-log"
+---
+
+# Live Log - <session_id>
+
+> Append-only refined log. Existing sections are not rewritten.
+
+## <iso8601 ts> - <KIND>[ `<identifier>`]
+
+[- <key>: `<value>`]   ← 0+ metadata bullets (call_id, exit_code, is_error, …)
+[<blank line>]
+[```<lang>             ← 0/1 fenced code block
+<body>
+```]
+```
+
+- **KIND** ∈ `USER`, `ASSISTANT`, `SYSTEM`, `THINKING`, `TOOL CALL`, `TOOL OUTPUT`
+- **identifier** — required for `TOOL CALL` (tool name) and `TOOL OUTPUT` (call_id, matches the TOOL CALL's `call_id` metadata bullet)
+- **metadata bullets** — `- call_id: \`...\``, `- exit_code: \`...\``, `- is_error: \`true\`` (use what applies)
+- `THINKING` sections carry the model's internal reasoning when present; signature-only thinking parts are dropped, never inlined as raw JSON.
+
+Both loggers go through `build_frontmatter` / `build_live_header` which produce byte-identical layouts — only the values differ.
+
+---
+
+Original (legacy) layout reference, kept for parsers that read older files:
 
 ```
 ---

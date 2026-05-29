@@ -41,7 +41,7 @@ from typing import Any
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
 SECTION_HEADER_RE = re.compile(
-    r"^## (?P<ts>\S+)\s*-\s*(?P<kind>USER|ASSISTANT|SYSTEM|TOOL CALL|TOOL OUTPUT)"
+    r"^## (?P<ts>\S+)\s*-\s*(?P<kind>USER|ASSISTANT|SYSTEM|THINKING|TOOL CALL|TOOL OUTPUT)"
     r"(?:\s+`(?P<ident>[^`]+)`)?\s*$"
 )
 BULLET_RE = re.compile(r"^- (?P<key>[^:]+):\s*(?P<value>.*)$")
@@ -180,7 +180,7 @@ def _infer_agent_from_tags(tags: Any) -> str | None:
 
 
 def _compute_stats(events: list[dict[str, Any]]) -> dict[str, int]:
-    stats = {"user": 0, "assistant": 0, "system": 0, "tool_call": 0, "tool_output": 0}
+    stats = {"user": 0, "assistant": 0, "system": 0, "thinking": 0, "tool_call": 0, "tool_output": 0}
     for ev in events:
         k = ev["kind"]
         if k == "USER":
@@ -189,6 +189,8 @@ def _compute_stats(events: list[dict[str, Any]]) -> dict[str, int]:
             stats["assistant"] += 1
         elif k == "SYSTEM":
             stats["system"] += 1
+        elif k == "THINKING":
+            stats["thinking"] += 1
         elif k == "TOOL CALL":
             stats["tool_call"] += 1
         elif k == "TOOL OUTPUT":
@@ -212,14 +214,15 @@ def _render_header(frontmatter: dict[str, Any], stats: dict[str, int], session_i
     chip = lambda label, value: (
         f'<span class="chip"><span class="chip-num">{value}</span> {html.escape(label)}</span>'
     )
-    stat_html = "".join(
-        [
-            chip("user", stats["user"]),
-            chip("assistant", stats["assistant"]),
-            chip("tool calls", stats["tool_call"]),
-            chip("tool outputs", stats["tool_output"]),
-        ]
-    )
+    chips = [
+        chip("user", stats["user"]),
+        chip("assistant", stats["assistant"]),
+        chip("tool calls", stats["tool_call"]),
+        chip("tool outputs", stats["tool_output"]),
+    ]
+    if stats.get("thinking"):
+        chips.append(chip("thinking", stats["thinking"]))
+    stat_html = "".join(chips)
 
     return f"""
 <header class="session-header">
@@ -267,6 +270,21 @@ def _render_one(ev: dict[str, Any]) -> str:
 <div class="event {bubble_class}" data-kind="{role}" data-ts="{safe_ts}">
   <div class="bubble">{rendered_text}</div>
   <div class="ts">{html.escape(time_part)}</div>
+</div>"""
+
+    if kind == "THINKING":
+        text = ev["blocks"][0]["text"] if ev.get("blocks") else ""
+        return f"""
+<div class="event thinking-event" data-kind="thinking" data-ts="{safe_ts}">
+  <details>
+    <summary>
+      <span class="caret"></span>
+      <span class="icon">💭</span>
+      <span class="label">Thinking</span>
+      <span class="ts">{html.escape(time_part)}</span>
+    </summary>
+    <div class="thinking-body"><pre class="codeblock"><code>{html.escape(text)}</code></pre></div>
+  </details>
 </div>"""
 
     if kind in ("TOOL CALL", "TOOL OUTPUT"):
@@ -563,6 +581,34 @@ body {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
 .message.user .ts { text-align: right; }
+.thinking-event { margin: 10px 0; }
+.thinking-event details {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  opacity: 0.85;
+}
+.thinking-event summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.thinking-event summary::-webkit-details-marker { display: none; }
+.thinking-event .label { font-weight: 500; }
+.thinking-event .icon { opacity: 0.7; }
+.thinking-event .ts {
+  margin-left: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.thinking-event .thinking-body { border-top: 1px dashed var(--border); }
+.thinking-event .codeblock { background: var(--bg); color: var(--muted); border-top: none; font-style: italic; }
 .tool-event { margin: 12px 0; }
 .tool-event details {
   background: var(--tool-bg);
