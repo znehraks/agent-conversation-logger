@@ -71,12 +71,13 @@ These flag *candidates*; the 🤖 pass explains why / assigns blame / writes the
 
 ## Output file convention
 
-- **Report filename**: `YYYY-MM-DD-eval-<session_id_short>-<role>.md` (e.g.
-  `2026-05-31-eval-7d1b0ef0-researcher.md`). Location: `<vault>/agent-logs/prompt-evals/`.
-- This name is intentionally **not** `transcript.md`, so the shared viewer (`viewer.html`)
-  opens it in **document mode** (formatted markdown), while live transcripts — always written
-  as `transcript.md` by the loggers — open in transcript (chat/insights) mode. Detection is
-  filename-first, so keep these names stable.
+- **Report filename**: must end with the fixed suffix **`.eval.md`** —
+  `YYYY-MM-DD-<session_id_short>-<role>.eval.md` (e.g.
+  `2026-05-31-7d1b0ef0-researcher.eval.md`). Location: `<vault>/agent-logs/prompt-evals/`.
+- The shared viewer (`viewer.html`) recognizes exactly **two** filenames:
+  `transcript.md` → transcript (chat/insights) mode, and `*.eval.md` → document mode.
+  **Any other filename triggers a "어떻게 열까요?" popup** asking the user to pick a view.
+  So eval reports MUST use the `.eval.md` suffix to render automatically — keep it stable.
 
 ## History note
 
