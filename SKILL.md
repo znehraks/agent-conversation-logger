@@ -267,6 +267,21 @@ with the schema. Pick by use case:
 A demo transcript covering every KIND lives at `examples/sample-transcript.md` — drop it
 into `viewer.html` to see the layout.
 
+### Web app (`web/`) — multi-file, virtualized
+
+For larger / multi-file viewing there is a React (Vite + TS) static app in `web/`:
+
+- **Drop many files at once** (or a folder). Files are grouped by `session_id`; a session's
+  rotation parts (`transcript.001.md` … `transcript.md`) are auto-ordered and concatenated.
+- **Left sidebar** lists sessions (and `*.eval.md` docs); expanding a session shows its parts —
+  click to **jump** to that part. 💬 대화 / 📊 인사이트 tabs per session.
+- **Virtualized stream** (react-virtuoso): only visible rows render, so a 16k-event session or
+  many concatenated parts scroll smoothly — no freeze, even for the largest sessions.
+- 100% client-side (FileReader, no upload) and fully static → deployable to Netlify with no
+  backend. Build: `cd web && npm install && npm run build` (→ `web/dist/`); dev: `npm run dev`.
+
+`viewer.html` stays as the zero-install, single-file fallback (double-click, no build).
+
 ## Repository Layout
 
 Two-layer model: this repo is the **source of truth**; `install.py` deploys copies to the
@@ -283,7 +298,8 @@ scripts/
     install_hooks.py             installs both Codex + Claude hooks
     install_launch_agent.py      vault auto-detect + symlink + legacy cleanup
     tests/                       pytest suite
-viewer.html                      standalone client-side interactive viewer
+viewer.html                      standalone single-file viewer (no build, double-click)
+web/                             React (Vite) static app: multi-file, sidebar, virtualized
 examples/sample-transcript.md    demo transcript (input for viewer/render)
 ```
 

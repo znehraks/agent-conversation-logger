@@ -1,0 +1,7 @@
+# Deploy this static viewer on Netlify with NO backend.
+# In the Netlify site settings, set the Base directory to "web" (this folder);
+# build + publish below are then relative to it. Files dropped into the viewer are
+# read locally in the browser (FileReader) and never uploaded.
+[build]
+  command = "npm run build"
+  publish = "dist"
