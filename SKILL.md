@@ -223,6 +223,12 @@ The viewer parses the common transcript schema and renders the same iMessage-sty
 entirely in the browser (no Python, no server, nothing written to disk — the dropped
 file is read locally via `FileReader`). Use **← 다른 파일 열기** to swap transcripts.
 
+Two top tabs on the same dropped file: **💬 대화** (the chat view) and **📊 인사이트**
+(per-session deterministic analytics — duration, turn/tool/error counts, tool-usage bar
+chart, error list with exit codes, and a time-ordered event-flow strip). Insights are
+computed purely in JS — no model or network — so the viewer stays fully static and works
+the same when hosted (e.g. Netlify).
+
 It reuses `render_html.py`'s parser and CSS ported to JavaScript, so both stay in sync
 with the schema. Pick by use case:
 

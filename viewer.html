@@ -418,6 +418,102 @@ body {
   text-align: center;
   color: var(--muted);
 }
+
+/* ---------- tabs ---------- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---------- insights ---------- */
+.ins-head { margin-bottom: 18px; }
+.ins-head h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+.ins-head .ins-sub { font-size: 12px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; word-break: break-all; }
+.ins-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 26px;
+}
+.ins-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: center;
+}
+.ins-card .ins-num { font-size: 24px; font-weight: 700; line-height: 1.1; }
+.ins-card .ins-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.ins-card.alert .ins-num { color: #e5484d; }
+.ins-section { margin-bottom: 26px; }
+.ins-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 12px;
+}
+.bar-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.bar-label {
+  flex: 0 0 130px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  text-align: right;
+  word-break: break-all;
+}
+.bar-track { flex: 1 1 auto; background: var(--chip-bg); border-radius: 6px; height: 18px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 6px; min-width: 2px; }
+.bar-val { flex: 0 0 36px; font-size: 12px; font-weight: 700; }
+.ins-empty, .ins-ok { color: var(--muted); font-size: 13px; padding: 8px 0; }
+.ins-ok { color: #1b9e4b; }
+.err-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 1px solid var(--output-border);
+  background: var(--output-bg);
+  border-radius: 8px;
+  margin: 6px 0;
+}
+.err-item { border-color: #f3c2c2; background: rgba(229,72,77,0.08); }
+.err-tool { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 700; font-size: 13px; }
+.err-code { font-size: 12px; color: #e5484d; font-weight: 600; }
+.err-ts { margin-left: auto; font-size: 11px; color: var(--muted); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.flow { display: flex; flex-wrap: wrap; gap: 2px; line-height: 0; }
+.tick { display: inline-block; width: 6px; height: 18px; border-radius: 2px; }
+.t-user { background: var(--user-bg); }
+.t-assistant { background: var(--muted); }
+.t-system { background: #f5a623; }
+.t-thinking { background: transparent; border: 1px dashed var(--muted); }
+.t-tool-call { background: var(--tool-fg); }
+.t-tool-output { background: #1b9e4b; }
+.flow-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+.flow-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.flow-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 </style>
 </head>
 <body>
@@ -442,8 +538,15 @@ body {
     <button id="open-another" type="button">← 다른 파일 열기</button>
     <span class="fname" id="fname"></span>
   </div>
-  <div id="header-slot"></div>
-  <main id="stream"></main>
+  <div class="tabs" id="tabs">
+    <button class="tab active" type="button" data-tab="chat">💬 대화</button>
+    <button class="tab" type="button" data-tab="insights">📊 인사이트</button>
+  </div>
+  <section id="chat-panel">
+    <div id="header-slot"></div>
+    <main id="stream"></main>
+  </section>
+  <section id="insights-panel" hidden></section>
 </div>
 
 <script>
@@ -681,6 +784,105 @@ function renderOne(ev) {
   return "";
 }
 
+/* ---------- insights (deterministic, no model needed) ---------- */
+
+function metaVal(ev, key) {
+  const e = (ev.meta || []).find(x => x.key === key);
+  return e ? e.value.replace(/`/g, "").trim() : null;
+}
+
+function fmtDur(ms) {
+  if (!isFinite(ms) || ms < 0) return "—";
+  const s = Math.round(ms / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${sec}s`;
+  return `${sec}s`;
+}
+
+function computeInsights(events) {
+  const stats = computeStats(events);
+  const toolCounts = {};
+  const errors = [];
+  let firstTs = null, lastTs = null;
+  for (const ev of events) {
+    if (ev.ts) { if (!firstTs) firstTs = ev.ts; lastTs = ev.ts; }
+    if (ev.kind === "TOOL CALL") {
+      const n = ev.ident || "(unknown)";
+      toolCounts[n] = (toolCounts[n] || 0) + 1;
+    }
+    if (ev.kind === "TOOL OUTPUT") {
+      const code = metaVal(ev, "exit_code");
+      const isErr = metaVal(ev, "is_error");
+      if ((isErr && isErr.toLowerCase() === "true") || (code !== null && code !== "" && code !== "0")) {
+        const name = (ev.ident || "").split(" (")[0] || metaVal(ev, "tool_name") || "tool";
+        errors.push({ tool: name, ts: ev.ts, code });
+      }
+    }
+  }
+  const durationMs = (firstTs && lastTs) ? (Date.parse(lastTs) - Date.parse(firstTs)) : NaN;
+  const tools = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]);
+  return { stats, tools, errors, durationMs, firstTs, lastTs, total: events.length };
+}
+
+function renderInsights(fm, events) {
+  const ins = computeInsights(events);
+  const card = (label, val, alert) =>
+    `<div class="ins-card${alert ? " alert" : ""}"><div class="ins-num">${val}</div><div class="ins-label">${esc(label)}</div></div>`;
+  const cards = [
+    card("전체 이벤트", ins.total),
+    card("소요 시간", fmtDur(ins.durationMs)),
+    card("유저 턴", ins.stats.user),
+    card("어시스턴트 턴", ins.stats.assistant),
+    card("툴 호출", ins.stats.tool_call),
+    card("에러", ins.errors.length, ins.errors.length > 0),
+  ];
+  if (ins.stats.thinking) cards.push(card("사고(thinking)", ins.stats.thinking));
+
+  const maxTool = ins.tools.length ? ins.tools[0][1] : 0;
+  const toolBars = ins.tools.length
+    ? ins.tools.map(([n, c]) =>
+        `<div class="bar-row"><span class="bar-label">${esc(n)}</span><span class="bar-track"><span class="bar-fill" style="width:${maxTool ? (c / maxTool * 100) : 0}%"></span></span><span class="bar-val">${c}</span></div>`
+      ).join("")
+    : '<div class="ins-empty">툴 호출 없음</div>';
+
+  const errRate = ins.stats.tool_output ? Math.round(ins.errors.length / ins.stats.tool_output * 100) : 0;
+  const errHtml = ins.errors.length
+    ? ins.errors.map(e =>
+        `<div class="err-item"><span class="err-tool">${esc(e.tool)}</span><span class="err-code">${e.code !== null ? "exit " + esc(e.code) : "error"}</span><span class="err-ts">${esc(fmtTime(e.ts))}</span></div>`
+      ).join("")
+    : '<div class="ins-ok">✓ 에러/실패 없음</div>';
+
+  const flow = events.map(ev => {
+    const k = ev.kind.toLowerCase().replace(/ /g, "-");
+    return `<span class="tick t-${k}" title="${esc(ev.kind)} · ${esc(fmtTime(ev.ts))}"></span>`;
+  }).join("");
+  const legend = [
+    ["t-user", "user"], ["t-assistant", "assistant"], ["t-system", "system"],
+    ["t-thinking", "thinking"], ["t-tool-call", "tool call"], ["t-tool-output", "tool output"],
+  ].map(([c, l]) => `<span><i class="tick ${c}"></i>${esc(l)}</span>`).join("");
+
+  return `
+<div class="ins-head">
+  <h2>📊 ${esc(fm.session_id || "session")}</h2>
+  <div class="ins-sub">${esc(fm.agent || "agent")}${ins.firstTs ? " · " + esc(ins.firstTs) + " → " + esc(ins.lastTs) : ""}</div>
+</div>
+<div class="ins-cards">${cards.join("")}</div>
+<div class="ins-section">
+  <h3>툴 사용 분포</h3>
+  <div class="bars">${toolBars}</div>
+</div>
+<div class="ins-section">
+  <h3>에러 / 실패 — ${ins.errors.length}건 (툴 출력 대비 ${errRate}%)</h3>
+  <div class="errs">${errHtml}</div>
+</div>
+<div class="ins-section">
+  <h3>대화 흐름 (시간순)</h3>
+  <div class="flow">${flow}</div>
+  <div class="flow-legend">${legend}</div>
+</div>`;
+}
+
 /* ---------- interactions (ported from render_html.py _JS) ---------- */
 
 function bindInteractions() {
@@ -729,12 +931,22 @@ function renderTranscript(text, filename) {
   const sessionId = fm.session_id || filename.replace(/\.(md|markdown|txt)$/i, "");
   document.getElementById("header-slot").innerHTML = renderHeader(fm, computeStats(events), sessionId);
   document.getElementById("stream").innerHTML = renderEventStream(events);
+  document.getElementById("insights-panel").innerHTML = renderInsights(fm, events);
   document.getElementById("fname").textContent = filename;
   document.title = `${agent || "agent"} · ${sessionId}`;
+  setTab("chat");
   launcher.hidden = true;
   app.hidden = false;
   window.scrollTo(0, 0);
   bindInteractions();
+}
+
+function setTab(name) {
+  document.querySelectorAll("#tabs .tab").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === name)
+  );
+  document.getElementById("chat-panel").hidden = name !== "chat";
+  document.getElementById("insights-panel").hidden = name !== "insights";
 }
 
 function loadFile(file) {
@@ -748,6 +960,12 @@ function loadFile(file) {
 // file input
 document.getElementById("file").addEventListener("change", e => {
   if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+// tabs
+document.getElementById("tabs").addEventListener("click", e => {
+  const btn = e.target.closest(".tab");
+  if (btn) setTab(btn.dataset.tab);
 });
 
 // "open another"
