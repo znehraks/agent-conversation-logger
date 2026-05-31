@@ -14,7 +14,7 @@ from typing import Any
 
 # Roll transcript.md to transcript.NNN.md once it crosses this size, so no single
 # markdown file grows large enough to freeze Obsidian / the viewer / editors.
-ROTATE_BYTES = int(os.environ.get("AGENT_LOGS_MAX_MD_BYTES") or 2_000_000)
+ROTATE_BYTES = int(os.environ.get("AGENT_LOGS_MAX_MD_BYTES") or 1_000_000)
 
 
 def rotate_if_large(md_path: Path) -> bool:

@@ -1122,8 +1122,8 @@ function showError(msg) {
 // merely contains an example `## <ts> - USER` line is never misread as a chat.
 function classifyFile(filename, fm) {
   const base = String(filename || "").trim().toLowerCase();
-  // Recognized format 1 — live transcript.
-  if (base === "transcript.md") return "transcript";
+  // Recognized format 1 — live transcript (incl. rotated parts transcript.NNN.md).
+  if (/^transcript(\.\d+)?\.md$/.test(base)) return "transcript";
   if (Array.isArray(fm.tags) && fm.tags.some(t => /-live-log$/.test(String(t)))) return "transcript";
   // Recognized format 2 — qualitative eval report (fixed `.eval.md` suffix).
   if (/\.eval\.md$/.test(base)) return "document";

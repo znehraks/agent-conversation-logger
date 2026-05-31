@@ -42,29 +42,23 @@ Resolved in this order:
 
 Both Codex and Claude Code use the same resolution — when a vault is detected they share `<vault>/agent-logs/`, and `codex-logs/` / `claude-logs/` keep them separated inside.
 
-### Codex never writes inside an Obsidian vault
+### Size cap keeps the vault Obsidian-safe
 
-Codex transcripts routinely grow to **many MB** (sessions of 12MB+ are common), and a
-single multi-MB markdown note **freezes Obsidian** — especially because Obsidian reopens the
-last-active file on launch. Claude transcripts stay small (~hundreds of KB). So:
+A single multi-MB markdown note **freezes Obsidian** (it reopens the last-active file on launch).
+Codex transcripts can grow to 12MB+, which is what caused freezes. Rather than splitting Codex
+out of the vault, **both engines cap transcript size and rotate**:
 
-- **Claude logs** live in the vault (`<vault>/agent-logs/`) — good for native Obsidian browsing.
-- **Codex logs** are kept **out of the vault**. The exporter has a hard guard: if its resolved
-  output root lands inside an iCloud Obsidian vault (path contains `iCloud~md~obsidian`), it
-  redirects to **`$AGENT_LOGS_CODEX_ROOT`** (default `~/agent-logs`) — and re-derives any stored
-  per-session `markdown_path` that still points into the vault. This holds even for long-running
-  sessions that cached the old hook command, because they execute the updated exporter file.
+- When `transcript.md` crosses **`AGENT_LOGS_MAX_MD_BYTES`** (default **1 MB**), it rolls to
+  `transcript.001.md`, `transcript.002.md`, … and a fresh `transcript.md` continues. No single
+  file gets large; nothing is lost (rotation, not truncation).
+- So **both Codex and Claude logs live in the vault** (`<vault>/agent-logs/{codex,claude}-logs/`),
+  browsable in Obsidian, and Obsidian never has to open a huge file.
+- Every rotated part keeps the frontmatter header (incl. the `*-live-log` tag), and the viewer
+  recognizes `transcript.md` and `transcript.NNN.md` — so any part opens cleanly.
 
-Recommended install (split roots):
-
-```bash
-python3 .../install.py \
-  --output-root "$HOME/agent-logs" \
-  --claude-output-root "<vault>/agent-logs" --no-trust
-```
-
-View Codex transcripts by dragging them from `~/agent-logs/codex-logs/<id>/transcript.md` into
-`viewer.html`. If a giant transcript already froze Obsidian, see "Recover Obsidian" below.
+Lower the cap (e.g. `AGENT_LOGS_MAX_MD_BYTES=500000`) for even snappier Obsidian; raise it for
+fewer files. A pre-existing giant transcript should be split into ≤cap parts before it sits in the
+vault (the loggers only cap going forward).
 
 ## Other Paths
 
