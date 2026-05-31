@@ -209,6 +209,51 @@ The HTML viewer:
 
 Open the resulting HTML in any browser (`open <path>` on macOS).
 
+## Interactive Viewer (viewer.html)
+
+`render_html.py` writes one HTML file per transcript. For ad-hoc browsing without
+running anything, use the standalone client-side viewer at the repo root:
+
+```bash
+open "${CLAUDE_SKILL_DIR}/viewer.html"
+```
+
+Then **drag-and-drop a `transcript.md`** onto the page, or click **파일 선택 / Choose file**.
+The viewer parses the common transcript schema and renders the same iMessage-style UI
+entirely in the browser (no Python, no server, nothing written to disk — the dropped
+file is read locally via `FileReader`). Use **← 다른 파일 열기** to swap transcripts.
+
+It reuses `render_html.py`'s parser and CSS ported to JavaScript, so both stay in sync
+with the schema. Pick by use case:
+
+| Need | Use |
+|---|---|
+| Browse a transcript right now | `viewer.html` (open once, drop files) |
+| Pre-render / share a fixed `.html`, batch a folder | `render_html.py` |
+
+A demo transcript covering every KIND lives at `examples/sample-transcript.md` — drop it
+into `viewer.html` to see the layout.
+
+## Repository Layout
+
+Two-layer model: this repo is the **source of truth**; `install.py` deploys copies to the
+runtime homes. Never edit the deployed runtime copies — edit here and re-run `install.py`.
+
+```
+SKILL.md                         skill manifest + agent operating manual (this file)
+scripts/
+  install.py / export.py         thin CLI wrappers
+  claude_logger.py               Claude Code hook entrypoint + redaction
+  render_html.py                 transcript.md → static HTML (per file / --recursive)
+  codex_session_exporter/
+    exporter.py                  Codex hook entrypoint + backfill + redaction
+    install_hooks.py             installs both Codex + Claude hooks
+    install_launch_agent.py      vault auto-detect + symlink + legacy cleanup
+    tests/                       pytest suite
+viewer.html                      standalone client-side interactive viewer
+examples/sample-transcript.md    demo transcript (input for viewer/render)
+```
+
 ## Source Repository
 
 Version-controlled at <https://github.com/miridih-jmyou/agent-conversation-logger>. Treat the local skill directory as a working copy of that repo.

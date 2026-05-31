@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcript Viewer</title>
+<style>
+:root {
+  --bg: #f2f3f5;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --muted: #6e7480;
+  --border: #e3e5e8;
+  --user-bg: #007aff;
+  --user-fg: #ffffff;
+  --assistant-bg: #ffffff;
+  --assistant-fg: #1a1a1a;
+  --system-bg: #fff8e1;
+  --system-fg: #5d4037;
+  --tool-bg: #f0f4ff;
+  --tool-border: #c5cae9;
+  --tool-fg: #1a237e;
+  --output-bg: #ecf7ed;
+  --output-border: #c8e6c9;
+  --output-fg: #1b5e20;
+  --code-bg: #1d1f24;
+  --code-fg: #e8e8e8;
+  --chip-bg: #eef0f3;
+  --chip-fg: #404654;
+  --accent: #007aff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16181c;
+    --surface: #1f2227;
+    --text: #ecedee;
+    --muted: #9aa0a6;
+    --border: #2a2d33;
+    --user-bg: #0a84ff;
+    --user-fg: #ffffff;
+    --assistant-bg: #2a2d33;
+    --assistant-fg: #ecedee;
+    --system-bg: #3a2f15;
+    --system-fg: #ffd591;
+    --tool-bg: #1f2640;
+    --tool-border: #344675;
+    --tool-fg: #adb6ff;
+    --output-bg: #16321f;
+    --output-border: #2e6f3b;
+    --output-fg: #b4eabd;
+    --code-bg: #0f1115;
+    --code-fg: #e8e8e8;
+    --chip-bg: #2a2d33;
+    --chip-fg: #c0c4cc;
+    --accent: #4dabff;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", system-ui, "Noto Sans KR", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+/* ---------- launcher ---------- */
+.launcher {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.drop-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: 20px;
+  padding: 48px 32px;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.drop-card.dragover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+.drop-card .emoji { font-size: 44px; line-height: 1; }
+.drop-card h1 { margin: 14px 0 6px; font-size: 22px; font-weight: 700; }
+.drop-card p { margin: 6px 0; color: var(--muted); font-size: 14px; }
+.file-btn {
+  display: inline-block;
+  margin-top: 18px;
+  padding: 11px 22px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.file-btn:hover { filter: brightness(1.06); }
+.drop-card .hint {
+  margin-top: 20px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--muted);
+  word-break: break-all;
+}
+.drop-card .err { color: #d33; font-weight: 600; }
+
+/* ---------- app ---------- */
+.container {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 16px 16px 96px;
+}
+.back-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 18px;
+  flex-wrap: wrap;
+}
+.back-bar button {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.back-bar button:hover { background: var(--chip-bg); }
+.back-bar .fname {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+.session-header {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 28px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.session-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px 16px;
+  margin-bottom: 12px;
+}
+.session-title h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+.stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.chip-num { font-weight: 700; }
+.session-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 13px;
+}
+.session-meta dt {
+  color: var(--muted);
+  font-weight: 500;
+}
+.session-meta dd {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+.tag {
+  display: inline-block;
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  border-radius: 6px;
+  padding: 1px 8px;
+  margin-right: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.toolbar input[type=search] {
+  flex: 1 1 220px;
+  min-width: 160px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.toolbar input[type=search]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.toolbar button {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.toolbar button:hover { background: var(--chip-bg); }
+.day-divider {
+  text-align: center;
+  margin: 28px 0 16px;
+  position: relative;
+}
+.day-divider span {
+  display: inline-block;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 999px;
+}
+.event { margin: 6px 0; }
+.event.hidden { display: none; }
+.message {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 0;
+}
+.message.user { align-items: flex-end; }
+.message.assistant, .message.system { align-items: flex-start; }
+.bubble {
+  max-width: 75%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: 15px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.04);
+}
+.message.user .bubble {
+  background: var(--user-bg);
+  color: var(--user-fg);
+  border-bottom-right-radius: 5px;
+}
+.message.assistant .bubble {
+  background: var(--assistant-bg);
+  color: var(--assistant-fg);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 5px;
+}
+.message.system .bubble {
+  background: var(--system-bg);
+  color: var(--system-fg);
+  font-size: 13px;
+  border-radius: 10px;
+  max-width: 100%;
+}
+.message .ts {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 2px 6px 0;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.message.user .ts { text-align: right; }
+.thinking-event { margin: 10px 0; }
+.thinking-event details {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  opacity: 0.85;
+}
+.thinking-event summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+.thinking-event summary::-webkit-details-marker { display: none; }
+.thinking-event .label { font-weight: 500; }
+.thinking-event .icon { opacity: 0.7; }
+.thinking-event .ts {
+  margin-left: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.thinking-event .thinking-body { border-top: 1px dashed var(--border); }
+.thinking-event .codeblock { background: var(--bg); color: var(--muted); border-top: none; font-style: italic; }
+.tool-event { margin: 12px 0; }
+.tool-event details {
+  background: var(--tool-bg);
+  border: 1px solid var(--tool-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tool-event.tool-output details {
+  background: var(--output-bg);
+  border-color: var(--output-border);
+}
+.tool-event summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  user-select: none;
+}
+.tool-event summary::-webkit-details-marker { display: none; }
+.caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  margin-right: 2px;
+  transition: transform 0.15s ease;
+  opacity: 0.6;
+}
+.tool-event details[open] .caret { transform: rotate(90deg); }
+.tool-event .icon { font-weight: 600; opacity: 0.65; }
+.tool-event .label { font-weight: 600; color: var(--tool-fg); }
+.tool-event.tool-output .label { color: var(--output-fg); }
+.tool-event .ident {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.45);
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--text);
+}
+@media (prefers-color-scheme: dark) {
+  .tool-event .ident { background: rgba(255,255,255,0.08); }
+}
+.tool-event .ts {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.tool-body {
+  border-top: 1px solid var(--tool-border);
+  background: var(--surface);
+}
+.tool-event.tool-output .tool-body { border-top-color: var(--output-border); }
+.meta {
+  padding: 10px 14px;
+  font-size: 12px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+}
+.meta-key {
+  color: var(--muted);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.meta-value {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  word-break: break-all;
+}
+.codeblock {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-x: auto;
+  border-top: 1px solid var(--border);
+}
+.codeblock code {
+  white-space: pre;
+  font: inherit;
+}
+.empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Launcher (file picker / drop zone) ===== -->
+<div class="launcher" id="launcher">
+  <div class="drop-card" id="drop">
+    <div class="emoji">🗨️</div>
+    <h1>Transcript Viewer</h1>
+    <p>agent-conversation-logger의 <code>transcript.md</code>를<br>여기에 끌어다 놓거나 선택하세요.</p>
+    <label class="file-btn">
+      파일 선택
+      <input type="file" id="file" accept=".md,.markdown,.txt" hidden>
+    </label>
+    <p class="hint" id="hint">…/agent-logs/claude-logs/&lt;session_id&gt;/transcript.md</p>
+  </div>
+</div>
+
+<!-- ===== App (rendered transcript) ===== -->
+<div class="container" id="app" hidden>
+  <div class="back-bar">
+    <button id="open-another" type="button">← 다른 파일 열기</button>
+    <span class="fname" id="fname"></span>
+  </div>
+  <div id="header-slot"></div>
+  <main id="stream"></main>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- parsing (ported from render_html.py) ---------- */
+
+const SECTION_RE = /^## (\S+)\s*-\s*(USER|ASSISTANT|SYSTEM|THINKING|TOOL CALL|TOOL OUTPUT)(?:\s+`([^`]+)`)?\s*$/;
+const BULLET_RE  = /^- ([^:]+):\s*(.*)$/;
+const FENCE_RE   = /^```(\w*)\s*$/;
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+function stripQuotes(v) {
+  if (v.length >= 2 && v[0] === v[v.length - 1] && (v[0] === "'" || v[0] === '"')) {
+    return v.slice(1, -1);
+  }
+  return v;
+}
+
+function parseFrontmatter(text) {
+  const m = /^---\n([\s\S]*?)\n---\n?/.exec(text);
+  if (!m) return [{}, text];
+  const fm = {};
+  let curList = null;
+  for (const line of m[1].split("\n")) {
+    if (!line.trim()) { curList = null; continue; }
+    if (line.startsWith("  - ") && curList) {
+      (fm[curList] = fm[curList] || []).push(stripQuotes(line.slice(4).trim()));
+      continue;
+    }
+    if (line.includes(":") && !line.startsWith(" ")) {
+      const idx = line.indexOf(":");
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (!value) { fm[key] = []; curList = key; }
+      else { fm[key] = stripQuotes(value); curList = null; }
+    }
+  }
+  return [fm, text.slice(m.index + m[0].length)];
+}
+
+function parseEvents(body) {
+  const events = [];
+  let current = null, codeOpen = false, codeLang = "", codeLines = [], metaPhase = true;
+  for (const line of body.split("\n")) {
+    if (codeOpen) {
+      if (line.trim() === "```") {
+        if (current) current.blocks.push({ lang: codeLang, text: codeLines.join("\n") });
+        codeOpen = false; codeLang = ""; codeLines = []; metaPhase = false;
+      } else {
+        codeLines.push(line);
+      }
+      continue;
+    }
+    const h = SECTION_RE.exec(line);
+    if (h) {
+      if (current) events.push(current);
+      current = { ts: h[1], kind: h[2], ident: h[3] || null, meta: [], blocks: [] };
+      metaPhase = true;
+      continue;
+    }
+    if (!current) continue;
+    if (metaPhase) {
+      const b = BULLET_RE.exec(line);
+      if (b) { current.meta.push({ key: b[1].trim(), value: b[2].trim() }); continue; }
+    }
+    const f = FENCE_RE.exec(line);
+    if (f) { codeOpen = true; codeLang = f[1] || "text"; codeLines = []; continue; }
+  }
+  if (current) events.push(current);
+  return events;
+}
+
+/* ---------- rendering (ported from render_html.py) ---------- */
+
+function fmtTime(ts) {
+  ts = ts || "";
+  return ts.length >= 19 ? ts.slice(11, 19) : ts;
+}
+
+function inferAgentFromTags(tags) {
+  if (Array.isArray(tags)) {
+    for (const t of tags) {
+      const s = String(t).toLowerCase();
+      if (s.includes("codex")) return "codex";
+      if (s.includes("claude")) return "claude-code";
+    }
+  }
+  return null;
+}
+
+function computeStats(events) {
+  const s = { user: 0, assistant: 0, system: 0, thinking: 0, tool_call: 0, tool_output: 0 };
+  const map = { "USER": "user", "ASSISTANT": "assistant", "SYSTEM": "system", "THINKING": "thinking", "TOOL CALL": "tool_call", "TOOL OUTPUT": "tool_output" };
+  for (const e of events) { const k = map[e.kind]; if (k) s[k]++; }
+  return s;
+}
+
+function renderHeader(fm, stats, sessionId) {
+  const rows = [];
+  for (const key of ["session_id", "agent", "started_at", "cwd", "source_path"]) {
+    if (fm[key]) rows.push(`<dt>${esc(key)}</dt><dd>${esc(String(fm[key]))}</dd>`);
+  }
+  if (Array.isArray(fm.tags) && fm.tags.length) {
+    const tagHtml = fm.tags.map(t => `<span class="tag">${esc(String(t))}</span>`).join(" ");
+    rows.push(`<dt>tags</dt><dd>${tagHtml}</dd>`);
+  }
+  const chip = (label, value) => `<span class="chip"><span class="chip-num">${value}</span> ${esc(label)}</span>`;
+  const chips = [
+    chip("user", stats.user),
+    chip("assistant", stats.assistant),
+    chip("tool calls", stats.tool_call),
+    chip("tool outputs", stats.tool_output),
+  ];
+  if (stats.thinking) chips.push(chip("thinking", stats.thinking));
+  return `
+<header class="session-header">
+  <div class="session-title">
+    <h1>${esc(sessionId)}</h1>
+    <div class="stats">${chips.join("")}</div>
+  </div>
+  <dl class="session-meta">
+    ${rows.join("")}
+  </dl>
+  <div class="toolbar">
+    <label class="search">
+      <input id="search" type="search" placeholder="메시지·툴 이벤트 필터…" />
+    </label>
+    <button id="toggle-tools" type="button" data-state="closed">툴 전체 펼치기</button>
+  </div>
+</header>`;
+}
+
+function renderEventStream(events) {
+  if (!events.length) {
+    return '<div class="empty">표시할 이벤트가 없습니다. transcript.md 형식이 맞는지 확인하세요.</div>';
+  }
+  const out = [];
+  let lastDate = null;
+  for (const ev of events) {
+    const ts = ev.ts || "";
+    const datePart = ts.length >= 10 ? ts.slice(0, 10) : "";
+    if (datePart && datePart !== lastDate) {
+      out.push(`<div class="day-divider"><span>${esc(datePart)}</span></div>`);
+      lastDate = datePart;
+    }
+    out.push(renderOne(ev));
+  }
+  return out.join("\n");
+}
+
+function renderMessageText(text) {
+  return esc(text).replace(/\n/g, "<br>");
+}
+
+function prettyJson(text) {
+  try { return JSON.stringify(JSON.parse(text), null, 2); }
+  catch (e) { return text; }
+}
+
+function renderMeta(meta) {
+  if (!meta || !meta.length) return "";
+  const rows = meta.map(e =>
+    `<div class="meta-row"><span class="meta-key">${esc(e.key)}</span><span class="meta-value">${esc(e.value)}</span></div>`
+  );
+  return `<div class="meta">${rows.join("")}</div>`;
+}
+
+function renderBlocks(blocks) {
+  if (!blocks || !blocks.length) return "";
+  return blocks.map(b => {
+    const lang = b.lang || "text";
+    let text = b.text || "";
+    if (lang === "json") text = prettyJson(text);
+    return `<pre class="codeblock" data-lang="${esc(lang)}"><code>${esc(text)}</code></pre>`;
+  }).join("");
+}
+
+function renderOne(ev) {
+  const kind = ev.kind;
+  const timePart = fmtTime(ev.ts || "");
+  const safeTs = esc(ev.ts || "");
+  if (kind === "USER" || kind === "ASSISTANT" || kind === "SYSTEM") {
+    const role = kind.toLowerCase();
+    const text = (ev.blocks && ev.blocks.length) ? ev.blocks[0].text : "";
+    return `
+<div class="event message ${role}" data-kind="${role}" data-ts="${safeTs}">
+  <div class="bubble">${renderMessageText(text)}</div>
+  <div class="ts">${esc(timePart)}</div>
+</div>`;
+  }
+  if (kind === "THINKING") {
+    const text = (ev.blocks && ev.blocks.length) ? ev.blocks[0].text : "";
+    return `
+<div class="event thinking-event" data-kind="thinking" data-ts="${safeTs}">
+  <details>
+    <summary>
+      <span class="caret"></span>
+      <span class="icon">💭</span>
+      <span class="label">Thinking</span>
+      <span class="ts">${esc(timePart)}</span>
+    </summary>
+    <div class="thinking-body"><pre class="codeblock"><code>${esc(text)}</code></pre></div>
+  </details>
+</div>`;
+  }
+  if (kind === "TOOL CALL" || kind === "TOOL OUTPUT") {
+    const isOutput = kind === "TOOL OUTPUT";
+    const cssKind = isOutput ? "tool-output" : "tool-call";
+    const icon = isOutput ? "▼" : "▶";
+    const title = isOutput ? "Tool Output" : "Tool Call";
+    const ident = ev.ident || "";
+    return `
+<div class="event tool-event ${cssKind}" data-kind="${cssKind}" data-ts="${safeTs}">
+  <details>
+    <summary>
+      <span class="caret"></span>
+      <span class="icon">${icon}</span>
+      <span class="label">${title}</span>
+      <span class="ident">${esc(ident)}</span>
+      <span class="ts">${esc(timePart)}</span>
+    </summary>
+    <div class="tool-body">
+      ${renderMeta(ev.meta)}
+      ${renderBlocks(ev.blocks)}
+    </div>
+  </details>
+</div>`;
+  }
+  return "";
+}
+
+/* ---------- interactions (ported from render_html.py _JS) ---------- */
+
+function bindInteractions() {
+  const events = Array.from(document.querySelectorAll(".event"));
+  const search = document.getElementById("search");
+  const toggleBtn = document.getElementById("toggle-tools");
+
+  if (search) {
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      events.forEach(el => {
+        if (!q) { el.classList.remove("hidden"); return; }
+        el.classList.toggle("hidden", !el.innerText.toLowerCase().includes(q));
+      });
+    });
+  }
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const open = toggleBtn.dataset.state !== "open";
+      document.querySelectorAll(".tool-event details").forEach(d => { d.open = open; });
+      toggleBtn.dataset.state = open ? "open" : "closed";
+      toggleBtn.textContent = open ? "툴 전체 접기" : "툴 전체 펼치기";
+    });
+  }
+}
+
+/* ---------- file loading & wiring ---------- */
+
+const launcher = document.getElementById("launcher");
+const app = document.getElementById("app");
+const dropCard = document.getElementById("drop");
+const hint = document.getElementById("hint");
+
+function showError(msg) {
+  hint.innerHTML = `<span class="err">${esc(msg)}</span>`;
+}
+
+function renderTranscript(text, filename) {
+  const [fm, body] = parseFrontmatter(text);
+  const events = parseEvents(body);
+  if (!events.length && !Object.keys(fm).length) {
+    showError("transcript 형식을 인식하지 못했습니다. agent-logs의 transcript.md 인지 확인하세요.");
+    return;
+  }
+  const agent = fm.agent || inferAgentFromTags(fm.tags);
+  const sessionId = fm.session_id || filename.replace(/\.(md|markdown|txt)$/i, "");
+  document.getElementById("header-slot").innerHTML = renderHeader(fm, computeStats(events), sessionId);
+  document.getElementById("stream").innerHTML = renderEventStream(events);
+  document.getElementById("fname").textContent = filename;
+  document.title = `${agent || "agent"} · ${sessionId}`;
+  launcher.hidden = true;
+  app.hidden = false;
+  window.scrollTo(0, 0);
+  bindInteractions();
+}
+
+function loadFile(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => renderTranscript(String(reader.result), file.name);
+  reader.onerror = () => showError("파일을 읽지 못했습니다.");
+  reader.readAsText(file, "utf-8");
+}
+
+// file input
+document.getElementById("file").addEventListener("change", e => {
+  if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+// "open another"
+document.getElementById("open-another").addEventListener("click", () => {
+  app.hidden = true;
+  launcher.hidden = false;
+  document.getElementById("file").value = "";
+  hint.innerHTML = "…/agent-logs/claude-logs/&lt;session_id&gt;/transcript.md";
+});
+
+// drag & drop (whole window)
+["dragenter", "dragover"].forEach(evt =>
+  window.addEventListener(evt, e => { e.preventDefault(); dropCard.classList.add("dragover"); })
+);
+["dragleave", "drop"].forEach(evt =>
+  window.addEventListener(evt, e => { e.preventDefault(); if (evt !== "drop") dropCard.classList.remove("dragover"); })
+);
+window.addEventListener("drop", e => {
+  dropCard.classList.remove("dragover");
+  const dt = e.dataTransfer;
+  if (dt && dt.files && dt.files[0]) loadFile(dt.files[0]);
+});
+</script>
+</body>
+</html>

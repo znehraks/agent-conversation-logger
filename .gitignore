@@ -2,3 +2,7 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+.pytest_cache/
+
+# Generated render output (keep the .md source, not the rendered HTML)
+examples/*.html
