@@ -551,7 +551,8 @@ body {
   padding: 14px 16px;
   text-align: center;
 }
-.ins-card .ins-num { font-size: 24px; font-weight: 700; line-height: 1.1; }
+.ins-card { overflow: hidden; }
+.ins-card .ins-num { font-size: 21px; font-weight: 700; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ins-card .ins-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .ins-card.alert .ins-num { color: #e5484d; }
 .ins-section { margin-bottom: 26px; }
@@ -1009,8 +1010,13 @@ function computeInsights(events) {
 
 function renderInsights(fm, events) {
   const ins = computeInsights(events);
-  const card = (label, val, alert) =>
-    `<div class="ins-card${alert ? " alert" : ""}"><div class="ins-num">${val}</div><div class="ins-label">${esc(label)}</div></div>`;
+  // Compact large numbers (9,651,830 → "9.7M") so cards don't overflow; keep exact value in a tooltip.
+  const fmtNum = (n) => Math.abs(n) >= 100000 ? new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n) : n.toLocaleString();
+  const card = (label, val, alert) => {
+    const isNum = typeof val === "number";
+    const inner = isNum ? `<div class="ins-num" title="${val.toLocaleString()}">${fmtNum(val)}</div>` : `<div class="ins-num">${val}</div>`;
+    return `<div class="ins-card${alert ? " alert" : ""}">${inner}<div class="ins-label">${esc(label)}</div></div>`;
+  };
   const cards = [
     card("전체 이벤트", ins.total),
     card("소요 시간", fmtDur(ins.durationMs)),
@@ -1025,7 +1031,7 @@ function renderInsights(fm, events) {
   if (ins.usageCount) {
     const u = ins.usage;
     const hitRate = (u.in + u.cache_read) ? Math.round(u.cache_read / (u.in + u.cache_read) * 100) : 0;
-    const tcard = (label, val) => `<div class="ins-card"><div class="ins-num">${val.toLocaleString()}</div><div class="ins-label">${esc(label)}</div></div>`;
+    const tcard = (label, val) => `<div class="ins-card"><div class="ins-num" title="${val.toLocaleString()}">${fmtNum(val)}</div><div class="ins-label">${esc(label)}</div></div>`;
     const tcards = [tcard("입력 토큰", u.in), tcard("출력 토큰", u.out), tcard("캐시 read", u.cache_read)];
     if (u.cache_write) tcards.push(tcard("캐시 write", u.cache_write));
     if (u.reasoning) tcards.push(tcard("추론 토큰", u.reasoning));

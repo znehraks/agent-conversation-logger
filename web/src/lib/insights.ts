@@ -15,6 +15,12 @@ function metaVal(ev: Ev, key: string): string | null {
   return e ? e.value.replace(/`/g, "").trim() : null;
 }
 
+// Compact large numbers (9,651,830 -> "9.7M") so insight cards don't overflow.
+export function fmtNum(n: number): string {
+  if (Math.abs(n) >= 100000) return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+  return n.toLocaleString();
+}
+
 export function fmtDur(ms: number): string {
   if (!isFinite(ms) || ms < 0) return "—";
   const s = Math.round(ms / 1000);

@@ -110,8 +110,8 @@ details[open] .caret { transform: rotate(90deg); }
 .ins-head h2 { margin: 0 0 4px; font-size: 16px; font-family: ui-monospace, Menlo, monospace; word-break: break-all; }
 .ins-sub { font-size: 12px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
 .ins-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 14px 0 24px; }
-.ins-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; }
-.ins-card .num { font-size: 24px; font-weight: 700; }
+.ins-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 10px; text-align: center; overflow: hidden; }
+.ins-card .num { font-size: 21px; font-weight: 700; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .ins-card .lbl { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .ins-card.alert .num { color: #e5484d; }
 .ins-section { margin-bottom: 24px; }
