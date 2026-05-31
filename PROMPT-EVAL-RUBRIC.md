@@ -69,6 +69,15 @@ as-of <iso8601> · <agent> · <cwd/role> · prompts N · turns N
 
 These flag *candidates*; the 🤖 pass explains why / assigns blame / writes the fix.
 
+## Output file convention
+
+- **Report filename**: `YYYY-MM-DD-eval-<session_id_short>-<role>.md` (e.g.
+  `2026-05-31-eval-7d1b0ef0-researcher.md`). Location: `<vault>/agent-logs/prompt-evals/`.
+- This name is intentionally **not** `transcript.md`, so the shared viewer (`viewer.html`)
+  opens it in **document mode** (formatted markdown), while live transcripts — always written
+  as `transcript.md` by the loggers — open in transcript (chat/insights) mode. Detection is
+  filename-first, so keep these names stable.
+
 ## History note
 
 v1 = per-dimension scores; v2 = 1–5 + weighted letter grade; **v3 (current) = qualitative

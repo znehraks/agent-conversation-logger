@@ -224,6 +224,12 @@ The viewer parses the common transcript schema and renders the same iMessage-sty
 entirely in the browser (no Python, no server, nothing written to disk — the dropped
 file is read locally via `FileReader`). Use **← 다른 파일 열기** to swap transcripts.
 
+**File detection** is by **filename first**: a dropped `transcript.md` opens in transcript
+mode; any other filename opens in **document mode** (formatted markdown). A renamed/exported
+transcript still opens in transcript mode via its `*-live-log` frontmatter tag (safety net).
+Content is not used to classify, so a markdown note that merely contains an example
+`## <ts> - USER` line is never misread as a chat.
+
 Two top tabs on the same dropped file: **💬 대화** (the chat view) and **📊 인사이트**
 (per-session deterministic analytics — duration, turn/tool/error counts, tool-usage bar
 chart, error list with exit codes, and a time-ordered event-flow strip). Insights are

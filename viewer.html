@@ -1044,12 +1044,21 @@ function showError(msg) {
   hint.innerHTML = `<span class="err">${esc(msg)}</span>`;
 }
 
+// File classification — filename first (loggers always write `transcript.md`),
+// with the `*-live-log` frontmatter tag as a safety net for renamed/exported
+// transcripts. Body content is intentionally NOT used, so a markdown note that
+// merely contains an example `## <ts> - USER` line is never misread as a chat.
+function classifyFile(filename, fm) {
+  const base = String(filename || "").trim().toLowerCase();
+  if (base === "transcript.md") return "transcript";
+  if (Array.isArray(fm.tags) && fm.tags.some(t => /-live-log$/.test(String(t)))) return "transcript";
+  return "document";
+}
+
 function renderTranscript(text, filename) {
   const [fm, body] = parseFrontmatter(text);
-  const events = parseEvents(body);
 
-  // Not a transcript (no KIND sections) → render as a formatted markdown document.
-  if (!events.length) {
+  if (classifyFile(filename, fm) !== "transcript") {
     if (!body.trim() && !Object.keys(fm).length) {
       showError("내용을 인식하지 못했습니다. transcript.md 또는 마크다운 파일인지 확인하세요.");
       return;
@@ -1058,6 +1067,7 @@ function renderTranscript(text, filename) {
     return;
   }
 
+  const events = parseEvents(body);
   const agent = fm.agent || inferAgentFromTags(fm.tags);
   const sessionId = fm.session_id || filename.replace(/\.(md|markdown|txt)$/i, "");
   document.getElementById("header-slot").innerHTML = renderHeader(fm, computeStats(events), sessionId);
