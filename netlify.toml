@@ -1,0 +1,10 @@
+# Netlify config for the React static viewer in web/.
+# Connecting this repo in Netlify needs no manual settings — these are picked up.
+# Fully static, no backend; dropped files are read locally (FileReader), never uploaded.
+[build]
+  base = "web"
+  publish = "dist"          # relative to base → web/dist
+  command = "npm run build"
+
+[build.environment]
+  NODE_VERSION = "20"
