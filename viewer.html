@@ -429,6 +429,26 @@ body {
   border-radius: 999px;
 }
 
+/* ---------- document mode (non-transcript markdown) ---------- */
+.doc { max-width: 760px; margin: 0 auto; line-height: 1.7; }
+.doc h1 { font-size: 24px; margin: 18px 0 12px; }
+.doc h2 { font-size: 19px; margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.doc h3 { font-size: 15px; margin: 20px 0 8px; color: var(--muted); text-transform: none; }
+.doc h4 { font-size: 14px; margin: 16px 0 6px; }
+.doc p { margin: 10px 0; }
+.doc ul, .doc ol { margin: 10px 0; padding-left: 22px; }
+.doc li { margin: 4px 0; }
+.doc a { color: var(--accent); }
+.doc code { background: var(--chip-bg); padding: 1px 6px; border-radius: 5px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.88em; }
+.doc pre.doc-code { background: var(--code-bg); color: var(--code-fg); padding: 12px 14px; border-radius: 10px; overflow-x: auto; }
+.doc pre.doc-code code { background: none; padding: 0; white-space: pre; }
+.doc blockquote.doc-quote { margin: 12px 0; padding: 8px 14px; border-left: 3px solid var(--accent); background: var(--chip-bg); border-radius: 0 8px 8px 0; color: var(--muted); }
+.doc hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+.doc table.doc-table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13px; }
+.doc table.doc-table th, .doc table.doc-table td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+.doc table.doc-table th { background: var(--chip-bg); font-weight: 600; }
+.doc table.doc-table tr:nth-child(even) td { background: color-mix(in srgb, var(--chip-bg) 40%, transparent); }
+
 /* ---------- tabs ---------- */
 .tabs {
   display: flex;
@@ -557,6 +577,7 @@ body {
     <main id="stream"></main>
   </section>
   <section id="insights-panel" hidden></section>
+  <section id="doc-panel" class="doc" hidden></section>
 </div>
 
 <script>
@@ -805,6 +826,65 @@ function renderOne(ev) {
   return "";
 }
 
+/* ---------- generic markdown rendering (document mode) ---------- */
+
+function mdInline(s) {
+  s = esc(s);
+  s = s.replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`);
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+
+function mdToHtml(md) {
+  const lines = md.replace(/\r/g, "").split("\n");
+  const out = [];
+  let i = 0, inCode = false, codeBuf = [], listType = null;
+  const closeList = () => { if (listType) { out.push(listType === "ul" ? "</ul>" : "</ol>"); listType = null; } };
+  while (i < lines.length) {
+    const line = lines[i];
+    if (inCode) {
+      if (line.trim() === "```") { out.push(`<pre class="doc-code"><code>${esc(codeBuf.join("\n"))}</code></pre>`); inCode = false; codeBuf = []; }
+      else codeBuf.push(line);
+      i++; continue;
+    }
+    if (/^```(\w*)\s*$/.test(line)) { closeList(); inCode = true; codeBuf = []; i++; continue; }
+    // table
+    if (/^\s*\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1])) {
+      closeList();
+      const header = line.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim());
+      i += 2;
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) { rows.push(lines[i].trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim())); i++; }
+      let t = '<table class="doc-table"><thead><tr>' + header.map(h => `<th>${mdInline(h)}</th>`).join("") + "</tr></thead><tbody>";
+      for (const r of rows) t += "<tr>" + r.map(c => `<td>${mdInline(c)}</td>`).join("") + "</tr>";
+      out.push(t + "</tbody></table>");
+      continue;
+    }
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) { closeList(); const n = h[1].length; out.push(`<h${n}>${mdInline(h[2])}</h${n}>`); i++; continue; }
+    if (/^\s*---+\s*$/.test(line)) { closeList(); out.push("<hr>"); i++; continue; }
+    if (/^\s*>\s?/.test(line)) {
+      closeList(); const buf = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) { buf.push(lines[i].replace(/^\s*>\s?/, "")); i++; }
+      out.push(`<blockquote class="doc-quote">${mdInline(buf.join(" "))}</blockquote>`); continue;
+    }
+    const ul = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (ul) { if (listType !== "ul") { closeList(); out.push('<ul class="doc-list">'); listType = "ul"; } out.push(`<li>${mdInline(ul[1])}</li>`); i++; continue; }
+    const ol = /^\s*\d+\.\s+(.*)$/.exec(line);
+    if (ol) { if (listType !== "ol") { closeList(); out.push('<ol class="doc-list">'); listType = "ol"; } out.push(`<li>${mdInline(ol[1])}</li>`); i++; continue; }
+    if (!line.trim()) { closeList(); i++; continue; }
+    closeList();
+    const para = [line]; i++;
+    while (i < lines.length && lines[i].trim() && !/^(#{1,6}\s|```|\s*[-*]\s|\s*\d+\.\s|\s*>|\s*---+\s*$|\s*\|)/.test(lines[i])) { para.push(lines[i]); i++; }
+    out.push(`<p>${mdInline(para.join(" "))}</p>`);
+  }
+  closeList();
+  if (inCode) out.push(`<pre class="doc-code"><code>${esc(codeBuf.join("\n"))}</code></pre>`);
+  return out.join("\n");
+}
+
 /* ---------- insights (deterministic, no model needed) ---------- */
 
 function metaVal(ev, key) {
@@ -967,10 +1047,17 @@ function showError(msg) {
 function renderTranscript(text, filename) {
   const [fm, body] = parseFrontmatter(text);
   const events = parseEvents(body);
-  if (!events.length && !Object.keys(fm).length) {
-    showError("transcript 형식을 인식하지 못했습니다. agent-logs의 transcript.md 인지 확인하세요.");
+
+  // Not a transcript (no KIND sections) → render as a formatted markdown document.
+  if (!events.length) {
+    if (!body.trim() && !Object.keys(fm).length) {
+      showError("내용을 인식하지 못했습니다. transcript.md 또는 마크다운 파일인지 확인하세요.");
+      return;
+    }
+    renderDocument(body, filename);
     return;
   }
+
   const agent = fm.agent || inferAgentFromTags(fm.tags);
   const sessionId = fm.session_id || filename.replace(/\.(md|markdown|txt)$/i, "");
   document.getElementById("header-slot").innerHTML = renderHeader(fm, computeStats(events), sessionId);
@@ -978,11 +1065,27 @@ function renderTranscript(text, filename) {
   document.getElementById("insights-panel").innerHTML = renderInsights(fm, events);
   document.getElementById("fname").textContent = filename;
   document.title = `${agent || "agent"} · ${sessionId}`;
+  document.getElementById("tabs").hidden = false;
+  document.getElementById("doc-panel").hidden = true;
   setTab("chat");
   launcher.hidden = true;
   app.hidden = false;
   window.scrollTo(0, 0);
   bindInteractions();
+}
+
+function renderDocument(body, filename) {
+  document.getElementById("doc-panel").innerHTML = mdToHtml(body);
+  document.getElementById("fname").textContent = filename;
+  document.title = filename;
+  // Document mode has no chat/insights tabs.
+  document.getElementById("tabs").hidden = true;
+  document.getElementById("chat-panel").hidden = true;
+  document.getElementById("insights-panel").hidden = true;
+  document.getElementById("doc-panel").hidden = false;
+  launcher.hidden = true;
+  app.hidden = false;
+  window.scrollTo(0, 0);
 }
 
 function setTab(name) {
