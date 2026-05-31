@@ -31,6 +31,51 @@ def redact(text: str) -> str:
     return redacted
 
 
+USAGE_KEYS = ("in", "out", "cache_read", "cache_write", "reasoning", "total")
+
+
+def extract_usage(message: Any) -> dict[str, int] | None:
+    """Pull per-message token usage from a Claude assistant row.
+
+    Claude reports usage per assistant message, so each emitted USAGE event is
+    already a per-turn delta — summing them yields the session total. Codex stores
+    a cumulative counter instead, so its exporter emits per-batch deltas; both ends
+    therefore produce the same delta-semantics USAGE section.
+    """
+    if not isinstance(message, dict):
+        return None
+    usage = message.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    def g(key: str) -> int:
+        value = usage.get(key)
+        return int(value) if isinstance(value, (int, float)) else 0
+
+    inp, out = g("input_tokens"), g("output_tokens")
+    cache_read, cache_write = g("cache_read_input_tokens"), g("cache_creation_input_tokens")
+    if not any((inp, out, cache_read, cache_write)):
+        return None
+    return {
+        "in": inp,
+        "out": out,
+        "cache_read": cache_read,
+        "cache_write": cache_write,
+        "total": inp + out + cache_read + cache_write,
+    }
+
+
+def usage_markdown(timestamp: str, usage: dict[str, Any]) -> str:
+    """Render a USAGE section shared by both loggers (only non-zero keys emitted)."""
+    lines = [f"## {timestamp} - USAGE\n\n"]
+    for key in USAGE_KEYS:
+        value = usage.get(key)
+        if value:
+            lines.append(f"- {key}: `{value}`\n")
+    lines.append("\n")
+    return "".join(lines)
+
+
 def read_json(path: Path, default: Any) -> Any:
     if not path.exists():
         return default
@@ -121,11 +166,16 @@ def row_to_events(row: dict[str, Any]) -> list[dict[str, Any]]:
     message = row.get("message")
     content = message.get("content") if isinstance(message, dict) else row.get("content")
 
+    usage = extract_usage(message) if row_type == "assistant" else None
+
     if not isinstance(content, list):
         text = text_from_content(content)
-        if not text:
-            return []
-        return [{"timestamp": timestamp, "kind": "message", "role": row_type, "text": redact(text)}]
+        scalar_events: list[dict[str, Any]] = []
+        if text:
+            scalar_events.append({"timestamp": timestamp, "kind": "message", "role": row_type, "text": redact(text)})
+        if usage:
+            scalar_events.append({"timestamp": timestamp, "kind": "usage", "usage": usage})
+        return scalar_events
 
     events: list[dict[str, Any]] = []
     text_buffer: list[str] = []
@@ -187,6 +237,8 @@ def row_to_events(row: dict[str, Any]) -> list[dict[str, Any]]:
         # Silently skip unknown content parts — never dump raw JSON into the transcript.
 
     _flush_text()
+    if usage:
+        events.append({"timestamp": timestamp, "kind": "usage", "usage": usage})
     return events
 
 
@@ -283,6 +335,8 @@ def append_events(markdown: Path, event_jsonl: Path, *, session_id: str, source_
                 md.write("```text\n")
                 md.write(str(event.get("text", ""))[:12000])
                 md.write("\n```\n\n")
+            elif kind == "usage":
+                md.write(usage_markdown(timestamp, event.get("usage") or {}))
 
 
 def append_from_hook(hook_input: dict[str, Any], output_root: Path, hook_log: Path | None) -> dict[str, Any]:

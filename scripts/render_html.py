@@ -41,7 +41,7 @@ from typing import Any
 
 FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
 SECTION_HEADER_RE = re.compile(
-    r"^## (?P<ts>\S+)\s*-\s*(?P<kind>USER|ASSISTANT|SYSTEM|THINKING|TOOL CALL|TOOL OUTPUT)"
+    r"^## (?P<ts>\S+)\s*-\s*(?P<kind>USER|ASSISTANT|SYSTEM|THINKING|TOOL CALL|TOOL OUTPUT|USAGE)"
     r"(?:\s+`(?P<ident>[^`]+)`)?\s*$"
 )
 BULLET_RE = re.compile(r"^- (?P<key>[^:]+):\s*(?P<value>.*)$")
@@ -286,6 +286,19 @@ def _render_one(ev: dict[str, Any]) -> str:
     <div class="thinking-body"><pre class="codeblock"><code>{html.escape(text)}</code></pre></div>
   </details>
 </div>"""
+
+    if kind == "USAGE":
+        label = {"in": "in", "out": "out", "cache_read": "cache", "cache_write": "cache+", "reasoning": "reason", "total": "total"}
+        vals = {m["key"]: m["value"].strip("` ") for m in (ev.get("meta") or [])}
+        chips = []
+        for k in ("in", "out", "cache_read", "cache_write", "reasoning", "total"):
+            if k in vals:
+                try:
+                    chips.append(f"{label[k]} {int(vals[k]):,}")
+                except ValueError:
+                    chips.append(f"{label[k]} {vals[k]}")
+        text = " · ".join(chips)
+        return f'<div class="event usage-line" data-kind="usage" data-ts="{safe_ts}"><span>🪙 {html.escape(text)}</span></div>'
 
     if kind in ("TOOL CALL", "TOOL OUTPUT"):
         is_output = kind == "TOOL OUTPUT"
@@ -702,6 +715,16 @@ body {
   padding: 32px;
   text-align: center;
   color: var(--muted);
+}
+.usage-line { text-align: center; margin: 4px 0; }
+.usage-line span {
+  display: inline-block;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 """
 

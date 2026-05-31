@@ -61,6 +61,14 @@ test -f README.md && head -n 1 README.md || echo "README.md 없음"
 # AI Creator Agent
 ```
 
+## 2026-05-29T09:12:12.760Z - USAGE
+
+- in: `412`
+- out: `188`
+- cache_read: `15230`
+- cache_write: `2048`
+- total: `17878`
+
 ## 2026-05-29T09:12:48.140Z - USER
 
 ```text
@@ -104,3 +112,11 @@ python3: can't open file 'package.json': [Errno 2] No such file or directory
 
 원하시면 더 짧은 버전이나 영어 버전도 만들어 드릴게요.
 ```
+
+## 2026-05-30T01:03:24.000Z - USAGE
+
+- in: `980`
+- out: `156`
+- cache_read: `31044`
+- cache_write: `512`
+- total: `32692`

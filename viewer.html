@@ -418,6 +418,16 @@ body {
   text-align: center;
   color: var(--muted);
 }
+.usage-line { text-align: center; margin: 4px 0; }
+.usage-line span {
+  display: inline-block;
+  background: var(--chip-bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
 
 /* ---------- tabs ---------- */
 .tabs {
@@ -554,7 +564,7 @@ body {
 
 /* ---------- parsing (ported from render_html.py) ---------- */
 
-const SECTION_RE = /^## (\S+)\s*-\s*(USER|ASSISTANT|SYSTEM|THINKING|TOOL CALL|TOOL OUTPUT)(?:\s+`([^`]+)`)?\s*$/;
+const SECTION_RE = /^## (\S+)\s*-\s*(USER|ASSISTANT|SYSTEM|THINKING|TOOL CALL|TOOL OUTPUT|USAGE)(?:\s+`([^`]+)`)?\s*$/;
 const BULLET_RE  = /^- ([^:]+):\s*(.*)$/;
 const FENCE_RE   = /^```(\w*)\s*$/;
 
@@ -758,6 +768,17 @@ function renderOne(ev) {
   </details>
 </div>`;
   }
+  if (kind === "USAGE") {
+    const label = { in: "in", out: "out", cache_read: "cache", cache_write: "cache+", reasoning: "reason", total: "total" };
+    const vals = {};
+    (ev.meta || []).forEach(m => { vals[m.key] = m.value.replace(/`/g, "").trim(); });
+    const chips = [];
+    ["in", "out", "cache_read", "cache_write", "reasoning", "total"].forEach(k => {
+      if (k in vals) { const n = parseInt(vals[k], 10); chips.push(`${label[k]} ${isNaN(n) ? vals[k] : n.toLocaleString()}`); }
+    });
+    return `<div class="event usage-line" data-kind="usage" data-ts="${safeTs}"><span>🪙 ${esc(chips.join(" · "))}</span></div>`;
+  }
+
   if (kind === "TOOL CALL" || kind === "TOOL OUTPUT") {
     const isOutput = kind === "TOOL OUTPUT";
     const cssKind = isOutput ? "tool-output" : "tool-call";
@@ -804,6 +825,8 @@ function computeInsights(events) {
   const stats = computeStats(events);
   const toolCounts = {};
   const errors = [];
+  const usage = { in: 0, out: 0, cache_read: 0, cache_write: 0, reasoning: 0, total: 0 };
+  let usageCount = 0;
   let firstTs = null, lastTs = null;
   for (const ev of events) {
     if (ev.ts) { if (!firstTs) firstTs = ev.ts; lastTs = ev.ts; }
@@ -819,10 +842,17 @@ function computeInsights(events) {
         errors.push({ tool: name, ts: ev.ts, code });
       }
     }
+    if (ev.kind === "USAGE") {
+      usageCount++;
+      (ev.meta || []).forEach(m => {
+        const n = parseInt(m.value.replace(/`/g, ""), 10);
+        if (m.key in usage && !isNaN(n)) usage[m.key] += n;
+      });
+    }
   }
   const durationMs = (firstTs && lastTs) ? (Date.parse(lastTs) - Date.parse(firstTs)) : NaN;
   const tools = Object.entries(toolCounts).sort((a, b) => b[1] - a[1]);
-  return { stats, tools, errors, durationMs, firstTs, lastTs, total: events.length };
+  return { stats, tools, errors, usage, usageCount, durationMs, firstTs, lastTs, total: events.length };
 }
 
 function renderInsights(fm, events) {
@@ -838,6 +868,19 @@ function renderInsights(fm, events) {
     card("에러", ins.errors.length, ins.errors.length > 0),
   ];
   if (ins.stats.thinking) cards.push(card("사고(thinking)", ins.stats.thinking));
+
+  let tokenSection = "";
+  if (ins.usageCount) {
+    const u = ins.usage;
+    const hitRate = (u.in + u.cache_read) ? Math.round(u.cache_read / (u.in + u.cache_read) * 100) : 0;
+    const tcard = (label, val) => `<div class="ins-card"><div class="ins-num">${val.toLocaleString()}</div><div class="ins-label">${esc(label)}</div></div>`;
+    const tcards = [tcard("입력 토큰", u.in), tcard("출력 토큰", u.out), tcard("캐시 read", u.cache_read)];
+    if (u.cache_write) tcards.push(tcard("캐시 write", u.cache_write));
+    if (u.reasoning) tcards.push(tcard("추론 토큰", u.reasoning));
+    tcards.push(tcard("총 토큰", u.total));
+    tcards.push(`<div class="ins-card"><div class="ins-num">${hitRate}%</div><div class="ins-label">캐시 적중률</div></div>`);
+    tokenSection = `<div class="ins-section"><h3>토큰 사용량 (USAGE ${ins.usageCount}블록 합산)</h3><div class="ins-cards">${tcards.join("")}</div></div>`;
+  }
 
   const maxTool = ins.tools.length ? ins.tools[0][1] : 0;
   const toolBars = ins.tools.length
@@ -868,6 +911,7 @@ function renderInsights(fm, events) {
   <div class="ins-sub">${esc(fm.agent || "agent")}${ins.firstTs ? " · " + esc(ins.firstTs) + " → " + esc(ins.lastTs) : ""}</div>
 </div>
 <div class="ins-cards">${cards.join("")}</div>
+${tokenSection}
 <div class="ins-section">
   <h3>툴 사용 분포</h3>
   <div class="bars">${toolBars}</div>

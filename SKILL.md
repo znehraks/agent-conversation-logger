@@ -147,11 +147,12 @@ tags:
 ```]
 ```
 
-- **KIND** ∈ `USER`, `ASSISTANT`, `SYSTEM`, `THINKING`, `TOOL CALL`, `TOOL OUTPUT`
+- **KIND** ∈ `USER`, `ASSISTANT`, `SYSTEM`, `THINKING`, `TOOL CALL`, `TOOL OUTPUT`, `USAGE`
 - **identifier** —
   - `TOOL CALL`: tool name (e.g. `Bash`, `exec_command`)
   - `TOOL OUTPUT`: prefer `tool_name (call_id)` (e.g. `Bash (toolu_01SzZ4...)`); fall back to bare `call_id` when the mapping is unknown
 - **metadata bullets** — `- call_id: \`...\``, `- tool_name: \`...\`` (TOOL OUTPUT when mapped), `- exit_code: \`...\``, `- is_error: \`true\`` (use what applies)
+- `USAGE` sections carry **per-turn token deltas** as bullets — `- in:`, `- out:`, `- cache_read:`, `- cache_write:` (Claude), `- reasoning:` (Codex), `- total:`. Claude emits one per assistant message; Codex collapses its many cumulative `token_count` events into one per-batch delta. Either way, **summing all USAGE sections gives the session total**, so the viewer's Insights tab aggregates them (totals + cache-hit ratio).
 - `THINKING` sections carry the model's internal reasoning when present; signature-only thinking parts are dropped, never inlined as raw JSON.
 - **tool_name mapping** — Both loggers persist a `call_names: {call_id: name}` map in their state files. TOOL CALL events register the mapping; later TOOL OUTPUT events look it up so transcripts show a human-readable name instead of a bare UUID. Session-level identifiers without a natural-language counterpart (`session_id`) stay as plain UUIDs.
 

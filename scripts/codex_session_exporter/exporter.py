@@ -314,7 +314,19 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
     events = []
     markdown_chunks = []
     call_names = state.setdefault("call_names", {})
+    # Codex emits a cumulative token_count many times per turn; collapse to the
+    # latest cumulative seen in this batch, then emit ONE per-batch delta USAGE
+    # section so summing USAGE sections still yields the session total.
+    latest_total: dict[str, Any] | None = None
+    latest_usage_ts: str | None = None
     for row in new_rows:
+        if row.get("type") == "event_msg" and (row.get("payload") or {}).get("type") == "token_count":
+            info = (row.get("payload") or {}).get("info") or {}
+            total = info.get("total_token_usage")
+            if isinstance(total, dict):
+                latest_total = total
+                latest_usage_ts = row.get("timestamp") or latest_usage_ts
+            continue
         event = row_to_live_event(row, session_id, path, excerpt_chars)
         if not event:
             continue
@@ -333,6 +345,27 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
         events.append(event)
         markdown_chunks.append(live_event_to_markdown(event))
 
+    # Emit one delta USAGE section for this batch (cumulative now − cumulative stored).
+    usage_cumulative = source_record.get("usage_cumulative") or {}
+    if latest_total is not None:
+        current = codex_usage_from_total(latest_total)
+        delta = {
+            key: max(0, current.get(key, 0) - int(usage_cumulative.get(key, 0) or 0))
+            for key in ("in", "out", "cache_read", "reasoning", "total")
+        }
+        if delta.get("total", 0) > 0:
+            usage_event = {
+                "schema_version": 1,
+                "session_id": session_id,
+                "source_path": str(path),
+                "timestamp": latest_usage_ts or now_utc(),
+                "kind": "usage",
+                "usage": delta,
+            }
+            events.append(usage_event)
+            markdown_chunks.append(live_event_to_markdown(usage_event))
+        usage_cumulative = current
+
     if markdown_chunks:
         with markdown_path.open("a", encoding="utf-8") as file:
             file.write("\n".join(markdown_chunks))
@@ -346,6 +379,7 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
         "offset": new_offset,
         "source_size": current_size,
         "markdown_path": str(markdown_path),
+        "usage_cumulative": usage_cumulative,
         "updated_at": now_utc(),
     }
     write_live_append_state(state_path, state)
@@ -465,6 +499,31 @@ def append_live_sessions(
     return [append_live_session_file(path, output_root) for path in files]
 
 
+def codex_usage_from_total(total: dict[str, Any]) -> dict[str, int]:
+    """Normalize a Codex total_token_usage dict into the shared usage shape."""
+    def g(key: str) -> int:
+        value = total.get(key)
+        return int(value) if isinstance(value, (int, float)) else 0
+
+    return {
+        "in": g("input_tokens"),
+        "out": g("output_tokens"),
+        "cache_read": g("cached_input_tokens"),
+        "reasoning": g("reasoning_output_tokens"),
+        "total": g("total_tokens"),
+    }
+
+
+def usage_markdown(timestamp: str, usage: dict[str, Any]) -> str:
+    """Render a USAGE section — identical format to the Claude logger."""
+    lines = [f"\n## {timestamp} - USAGE\n\n"]
+    for key in ("in", "out", "cache_read", "cache_write", "reasoning", "total"):
+        value = usage.get(key)
+        if value:
+            lines.append(f"- {key}: `{value}`\n")
+    return "".join(lines)
+
+
 def row_to_live_event(row: dict[str, Any], session_id: str, source_path: Path, excerpt_chars: int) -> dict[str, Any] | None:
     payload = row.get("payload") or {}
     row_type = row.get("type")
@@ -553,6 +612,8 @@ def live_event_to_markdown(event: dict[str, Any]) -> str:
         return f"\n## {timestamp} - TOOL OUTPUT `{identifier}`\n\n{meta}\n{body}"
     if kind == "thinking":
         return f"\n## {timestamp} - THINKING\n\n```text\n{event.get('text') or ''}\n```\n"
+    if kind == "usage":
+        return usage_markdown(timestamp, event.get("usage") or {})
     return ""
 
 
