@@ -42,6 +42,30 @@ Resolved in this order:
 
 Both Codex and Claude Code use the same resolution — when a vault is detected they share `<vault>/agent-logs/`, and `codex-logs/` / `claude-logs/` keep them separated inside.
 
+### Codex never writes inside an Obsidian vault
+
+Codex transcripts routinely grow to **many MB** (sessions of 12MB+ are common), and a
+single multi-MB markdown note **freezes Obsidian** — especially because Obsidian reopens the
+last-active file on launch. Claude transcripts stay small (~hundreds of KB). So:
+
+- **Claude logs** live in the vault (`<vault>/agent-logs/`) — good for native Obsidian browsing.
+- **Codex logs** are kept **out of the vault**. The exporter has a hard guard: if its resolved
+  output root lands inside an iCloud Obsidian vault (path contains `iCloud~md~obsidian`), it
+  redirects to **`$AGENT_LOGS_CODEX_ROOT`** (default `~/agent-logs`) — and re-derives any stored
+  per-session `markdown_path` that still points into the vault. This holds even for long-running
+  sessions that cached the old hook command, because they execute the updated exporter file.
+
+Recommended install (split roots):
+
+```bash
+python3 .../install.py \
+  --output-root "$HOME/agent-logs" \
+  --claude-output-root "<vault>/agent-logs" --no-trust
+```
+
+View Codex transcripts by dragging them from `~/agent-logs/codex-logs/<id>/transcript.md` into
+`viewer.html`. If a giant transcript already froze Obsidian, see "Recover Obsidian" below.
+
 ## Other Paths
 
 | Component | Path |

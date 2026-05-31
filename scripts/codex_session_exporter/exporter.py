@@ -277,8 +277,20 @@ def export_new_sessions(
     return results
 
 
+def redirect_obsidian_root(output_root: Path) -> Path:
+    """Codex transcripts routinely grow to many MB and freeze Obsidian, so they must
+    never land inside an iCloud Obsidian vault. If the resolved root points there —
+    e.g. a long-running session still calling a cached hook command with the old
+    vault path — redirect to ~/agent-logs (outside the vault). Claude logs are small
+    and intentionally stay in the vault, so this guard is Codex-only by design."""
+    p = Path(output_root)
+    if "iCloud~md~obsidian" in str(p):
+        return Path(os.environ.get("AGENT_LOGS_CODEX_ROOT") or (Path.home() / "agent-logs"))
+    return p
+
+
 def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int = 2_000) -> dict[str, Any]:
-    root = Path(output_root)
+    root = redirect_obsidian_root(Path(output_root))
     state_path = root / "state" / "live_append_state.json"
     state = read_live_append_state(state_path)
     source_key = str(path)
@@ -307,6 +319,11 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
             cwd = str(payload.get("cwd") or cwd)
 
     markdown_path = Path(source_record.get("markdown_path") or live_note_path(root, session_id, started_at))
+    # A previously-stored markdown_path can still point inside the vault (e.g. set by a
+    # hook before this guard shipped). The stored path wins over `root`, so re-derive it
+    # under the safe root whenever it lands in an Obsidian vault.
+    if "iCloud~md~obsidian" in str(markdown_path):
+        markdown_path = live_note_path(root, session_id, started_at)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     if not markdown_path.exists():
         markdown_path.write_text(build_live_header(session_id, path, started_at, cwd=cwd), encoding="utf-8")

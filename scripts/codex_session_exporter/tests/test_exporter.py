@@ -288,6 +288,37 @@ class CodexSessionExporterTest(unittest.TestCase):
                 child.rmdir()
         tmp.rmdir()
 
+    def test_codex_logs_never_written_inside_obsidian_vault(self) -> None:
+        tmp = Path(self._testMethodName)
+        tmp.mkdir(exist_ok=True)
+        # Simulate a cached hook command still pointing at an iCloud Obsidian vault.
+        vault_root = tmp / "iCloud~md~obsidian" / "Documents" / "DesignC" / "개발" / "agent-logs"
+        source = tmp / "rollout-2026-05-27T12-00-00-019e-vault.jsonl"
+        write_jsonl(
+            source,
+            [
+                {"type": "session_meta", "timestamp": "2026-05-27T03:00:00.000Z", "payload": {"id": "019e-vault", "cwd": "/workspace/project", "timestamp": "2026-05-27T03:00:00.000Z"}},
+                {"type": "response_item", "timestamp": "2026-05-27T03:00:02.000Z", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "응답"}]}},
+            ],
+        )
+        redirected = tmp / "redirected"
+        os.environ["AGENT_LOGS_CODEX_ROOT"] = str(redirected)
+        try:
+            result = append_live_session_file(source, vault_root)
+        finally:
+            del os.environ["AGENT_LOGS_CODEX_ROOT"]
+        # Output must be redirected out of the vault, never written inside it.
+        self.assertNotIn("iCloud~md~obsidian", result["markdown_path"])
+        self.assertFalse((vault_root / "codex-logs").exists())
+        self.assertTrue((redirected / "codex-logs" / "019e-vault" / "transcript.md").exists())
+
+        for child in sorted(tmp.rglob("*"), reverse=True):
+            if child.is_file() or child.is_symlink():
+                child.unlink()
+            elif child.is_dir():
+                child.rmdir()
+        tmp.rmdir()
+
     def test_append_live_session_emits_per_batch_token_usage_delta(self) -> None:
         tmp = Path(self._testMethodName)
         tmp.mkdir(exist_ok=True)
