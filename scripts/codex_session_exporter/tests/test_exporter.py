@@ -288,6 +288,41 @@ class CodexSessionExporterTest(unittest.TestCase):
                 child.rmdir()
         tmp.rmdir()
 
+    def test_transcript_rotates_when_oversized(self) -> None:
+        from codex_session_exporter import exporter as ex
+        tmp = Path(self._testMethodName)
+        tmp.mkdir(exist_ok=True)
+        source = tmp / "rollout-2026-05-27T12-00-00-019e-rot.jsonl"
+        out = tmp / "vault"
+        write_jsonl(
+            source,
+            [
+                {"type": "session_meta", "timestamp": "2026-05-27T03:00:00.000Z", "payload": {"id": "019e-rot", "cwd": "/w", "timestamp": "2026-05-27T03:00:00.000Z"}},
+                {"type": "response_item", "timestamp": "2026-05-27T03:00:02.000Z", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "첫 배치 응답"}]}},
+            ],
+        )
+        old = ex.ROTATE_BYTES
+        ex.ROTATE_BYTES = 200  # tiny cap so the second batch triggers rotation
+        try:
+            append_live_session_file(source, out)  # creates transcript.md (> 200B with header)
+            with source.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"type": "response_item", "timestamp": "2026-05-27T03:00:05.000Z", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "둘째 배치"}]}}, ensure_ascii=False) + "\n")
+            append_live_session_file(source, out)  # transcript.md now oversized → rotate
+        finally:
+            ex.ROTATE_BYTES = old
+        sess = out / "codex-logs" / "019e-rot"
+        self.assertTrue((sess / "transcript.001.md").exists(), "oversized transcript should roll to transcript.001.md")
+        self.assertTrue((sess / "transcript.md").exists(), "a fresh transcript.md should continue")
+        self.assertIn("첫 배치 응답", (sess / "transcript.001.md").read_text(encoding="utf-8"))
+        self.assertIn("둘째 배치", (sess / "transcript.md").read_text(encoding="utf-8"))
+
+        for child in sorted(tmp.rglob("*"), reverse=True):
+            if child.is_file() or child.is_symlink():
+                child.unlink()
+            elif child.is_dir():
+                child.rmdir()
+        tmp.rmdir()
+
     def test_codex_logs_never_written_inside_obsidian_vault(self) -> None:
         tmp = Path(self._testMethodName)
         tmp.mkdir(exist_ok=True)

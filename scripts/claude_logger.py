@@ -4,11 +4,32 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import re
 import sys
 import time
 from typing import Any
+
+
+# Roll transcript.md to transcript.NNN.md once it crosses this size, so no single
+# markdown file grows large enough to freeze Obsidian / the viewer / editors.
+ROTATE_BYTES = int(os.environ.get("AGENT_LOGS_MAX_MD_BYTES") or 2_000_000)
+
+
+def rotate_if_large(md_path: Path) -> bool:
+    """If md_path is at/over the cap, rename it to the next transcript.NNN.md part.
+    The active filename stays transcript.md; the caller re-creates a fresh header."""
+    try:
+        if md_path.exists() and md_path.stat().st_size >= ROTATE_BYTES:
+            n = 1
+            while (md_path.parent / f"transcript.{n:03d}.md").exists():
+                n += 1
+            md_path.rename(md_path.parent / f"transcript.{n:03d}.md")
+            return True
+    except OSError:
+        pass
+    return False
 
 
 SECRET_PATTERNS = [
@@ -388,6 +409,7 @@ def append_from_hook(hook_input: dict[str, Any], output_root: Path, hook_log: Pa
             if cid and str(cid) in call_names:
                 event["name"] = call_names[str(cid)]
     md_path = markdown_path(output_root, session_id)
+    rotate_if_large(md_path)
     ensure_markdown(md_path, session_id=session_id, source_path=source_path, hook_input=hook_input)
     append_events(md_path, output_root / "data" / "claude_live_events.jsonl", session_id=session_id, source_path=source_path, events=events)
     offsets[key] = new_offset

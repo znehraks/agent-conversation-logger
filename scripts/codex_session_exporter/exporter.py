@@ -277,6 +277,11 @@ def export_new_sessions(
     return results
 
 
+# Roll transcript.md to transcript.NNN.md once it crosses this size, so no single
+# markdown file grows large enough to freeze Obsidian / the viewer / editors.
+ROTATE_BYTES = int(os.environ.get("AGENT_LOGS_MAX_MD_BYTES") or 2_000_000)
+
+
 def redirect_obsidian_root(output_root: Path) -> Path:
     """Codex transcripts routinely grow to many MB and freeze Obsidian, so they must
     never land inside an iCloud Obsidian vault. If the resolved root points there —
@@ -325,6 +330,16 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
     if "iCloud~md~obsidian" in str(markdown_path):
         markdown_path = live_note_path(root, session_id, started_at)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    # Roll to transcript.NNN.md once the active file crosses the cap, so no single
+    # markdown grows large enough to freeze Obsidian / the viewer / editors.
+    try:
+        if markdown_path.exists() and markdown_path.stat().st_size >= ROTATE_BYTES:
+            n = 1
+            while (markdown_path.parent / f"transcript.{n:03d}.md").exists():
+                n += 1
+            markdown_path.rename(markdown_path.parent / f"transcript.{n:03d}.md")
+    except OSError:
+        pass
     if not markdown_path.exists():
         markdown_path.write_text(build_live_header(session_id, path, started_at, cwd=cwd), encoding="utf-8")
 
