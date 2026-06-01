@@ -40,7 +40,7 @@ button { font-family: inherit; }
 .drop-card p { margin: 6px 0; color: var(--muted); font-size: 14px; }
 .file-btn { display: inline-block; margin: 16px 6px 0; padding: 11px 20px; border-radius: 10px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
 .file-btn.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
-.drop-card .hint { margin-top: 18px; font-size: 12px; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
+.drop-card .hint { margin-top: 18px; font-size: 12px; font-family: ui-monospace, Menlo, monospace; color: var(--muted); word-break: keep-all; line-break: strict; }
 
 /* ---- app shell ---- */
 .shell { display: flex; flex-direction: column; height: 100vh; }
@@ -153,7 +153,14 @@ details[open] .caret { transform: rotate(90deg); }
 .drop-card .lead b { color: var(--text); }
 .drop-card .cta { display: flex; gap: 10px; justify-content: center; margin: 18px 0 12px; }
 .drop-card .hint.subtle { font-size: 11.5px; opacity: .8; margin-top: 8px; }
-.drop-card .hint.subtle a { white-space: nowrap; }
+.drop-card .hint a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+.drop-card .hint a:hover { text-decoration-thickness: 2px; }
 
 .modes { display: grid; gap: 10px; margin: 4px 0 12px; text-align: left; }
 .mode { background: var(--chip-bg); border: 1px solid transparent; border-radius: 12px; padding: 14px 16px; }

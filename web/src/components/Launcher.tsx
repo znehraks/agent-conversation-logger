@@ -16,7 +16,7 @@ export function Launcher({ onFiles }: { onFiles: (files: FileList | File[]) => v
       }}
     >
       <div className={`drop-card${drag ? " drag" : ""}`}>
-        <div className="emoji">🗨️</div>
+        <div className="emoji">💬</div>
         <h1>Agent Conversation Viewer</h1>
         <p className="lead">
           Codex · Claude Code 대화 로그를 메신저 UI로.
@@ -45,7 +45,8 @@ export function Launcher({ onFiles }: { onFiles: (files: FileList | File[]) => v
               <h3>로거가 만든 정제 파일</h3>
             </div>
             <p className="mode-desc">
-              vault에 이미 쌓아두고 있다면 <code>transcript.md</code> / <code>transcript.NNN.md</code> / <code>*.eval.md</code> 어느 것이든.
+              <code>transcript.md</code> · <code>*.eval.md</code> 그대로. 분할된{" "}
+              <code>transcript.NNN.md</code>는 함께 드롭하면 자동 연결.
             </p>
           </div>
         </div>
@@ -65,12 +66,9 @@ export function Launcher({ onFiles }: { onFiles: (files: FileList | File[]) => v
         </div>
 
         <p className="hint">
-          🔒 로컬에서만 처리 · 여러 파일 한 번에 OK · 큰 세션이 여러 파일로 쪼개져 있어도 자동 연결
-        </p>
-        <p className="hint subtle">
-          자동 적재 원하면{" "}
+          🔒 로컬에서만 처리 · 로거 세팅은{" "}
           <a href="https://github.com/znehraks/agent-conversation-logger" target="_blank" rel="noreferrer">
-            GitHub 가이드 →
+            GitHub →
           </a>
         </p>
       </div>
