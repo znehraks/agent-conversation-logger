@@ -179,11 +179,20 @@ export default function App() {
     // topbar isn't lying about where the visible data came from.
     setRestoreNotice(null);
 
-    const newIds = new Set(
-      newlyLoaded.map((f) => (f.fm.session_id as string) || f.name).filter(Boolean)
-    );
-    const newSession = lib.sessions.find((s) => newIds.has(s.id));
-    const newDoc = lib.docs.find((d) => newIds.has(d.name));
+    // sessions match by session_id; docs match by filename — keep them in
+    // separate sets so a dropped *.eval.md whose frontmatter has a session_id
+    // still gets auto-selected (its doc.name is the filename, not that id).
+    const newSessionIds = new Set<string>();
+    const newDocNames = new Set<string>();
+    for (const f of newlyLoaded) {
+      if (f.type === "transcript") {
+        newSessionIds.add((f.fm.session_id as string) || f.name);
+      } else {
+        newDocNames.add(f.name);
+      }
+    }
+    const newSession = lib.sessions.find((s) => newSessionIds.has(s.id));
+    const newDoc = lib.docs.find((d) => newDocNames.has(d.name));
     if (newSession) setSelection({ type: "session", id: newSession.id });
     else if (newDoc) setSelection({ type: "doc", id: newDoc.name });
     else if (!selection && lib.sessions.length) setSelection({ type: "session", id: lib.sessions[0].id });
