@@ -413,7 +413,7 @@ export function parseCodexJsonl(text: string, opts: ParseOpts = {}): { events: E
         ts, kind,
         blocks: [{ lang: "text", text: redact(text) }],
       }));
-    } else if (payload.type === "function_call") {
+    } else if (payload.type === "function_call" || payload.type === "tool_search_call") {
       const argsRaw = payload.arguments;
       let argsObj: any = argsRaw;
       if (typeof argsRaw === "string") {
@@ -423,7 +423,7 @@ export function parseCodexJsonl(text: string, opts: ParseOpts = {}): { events: E
       const argsText = typeof argsObj === "object" && argsObj !== null
         ? JSON.stringify(argsObj)
         : String(argsRaw ?? "");
-      const name = String(payload.name || "tool");
+      const name = String(payload.name || (payload.type === "tool_search_call" ? "tool_search" : "tool"));
       const callId = String(payload.call_id || "");
       if (callId && name) {
         callNames[callId] = name;
@@ -453,7 +453,7 @@ export function parseCodexJsonl(text: string, opts: ParseOpts = {}): { events: E
         meta,
         blocks,
       }));
-    } else if (payload.type === "function_call_output") {
+    } else if (payload.type === "function_call_output" || payload.type === "tool_search_output") {
       const output = String(payload.output || "");
       const callId = String(payload.call_id || "");
       const exit = extractExitCode(output);

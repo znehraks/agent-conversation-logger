@@ -298,7 +298,7 @@ function processCodexRow(row: any, s: CodexState): void {
     if (!text || text.indexOf("<environment_context>") >= 0 || text.indexOf("<user_instructions>") >= 0) return;
     const kind: Ev["kind"] = role === "user" ? "USER" : role === "assistant" ? "ASSISTANT" : "SYSTEM";
     s.events.push(ev({ ts, kind, blocks: [{ lang: "text", text: redact(text) }] }));
-  } else if (payload.type === "function_call") {
+  } else if (payload.type === "function_call" || payload.type === "tool_search_call") {
     const argsRaw = payload.arguments;
     let argsObj: any = argsRaw;
     if (typeof argsRaw === "string") {
@@ -308,7 +308,7 @@ function processCodexRow(row: any, s: CodexState): void {
     const argsText = typeof argsObj === "object" && argsObj !== null
       ? JSON.stringify(argsObj)
       : String(argsRaw ?? "");
-    const name = String(payload.name || "tool");
+    const name = String(payload.name || (payload.type === "tool_search_call" ? "tool_search" : "tool"));
     const callId = String(payload.call_id || "");
     if (callId && name) {
       s.callNames[callId] = name;
@@ -329,7 +329,7 @@ function processCodexRow(row: any, s: CodexState): void {
       ? [{ lang: "text", text: redact(Array.isArray(command) ? command.join(" ") : String(command)) }]
       : [{ lang: "json", text: redact(argsText) }];
     s.events.push(ev({ ts, kind: "TOOL CALL", ident: name, meta, blocks }));
-  } else if (payload.type === "function_call_output") {
+  } else if (payload.type === "function_call_output" || payload.type === "tool_search_output") {
     const output = String(payload.output || "");
     const callId = String(payload.call_id || "");
     const exit = extractExitCode(output);
