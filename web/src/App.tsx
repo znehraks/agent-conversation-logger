@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { VirtuosoHandle } from "react-virtuoso";
 import { Launcher } from "./components/Launcher";
 import { Sidebar, Selection } from "./components/Sidebar";
@@ -8,6 +8,18 @@ import { DocumentView } from "./components/DocumentView";
 import { ProgressView, ProgressItem } from "./components/ProgressView";
 import { buildLibrary, loadFile, Library, LoadedFile } from "./lib/classify";
 import { isJsonl, parseJsonlFile, ParseHandle } from "./lib/jsonlClient";
+import {
+  SCHEMA_VERSION,
+  clearLibrary,
+  loadLibrary,
+  notifyChange,
+  onStoreChange,
+  saveLibrary,
+} from "./lib/store";
+
+type RestoreNotice =
+  | { type: "restored"; saved_at: number }
+  | { type: "schema-mismatch"; saved_at: number; stored_version: number };
 
 export default function App() {
   const [library, setLibrary] = useState<Library | null>(null);
@@ -16,9 +28,78 @@ export default function App() {
   const [tab, setTab] = useState<"chat" | "insights">("chat");
   const [progress, setProgress] = useState<ProgressItem[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [restoreNotice, setRestoreNotice] = useState<RestoreNotice | null>(null);
+  const [hydrated, setHydrated] = useState(false);
   const handlesRef = useRef<ParseHandle[]>([]);
   const dragDepthRef = useRef(0);
   const virtuoso = useRef<VirtuosoHandle>(null);
+
+  // -- mount: try to restore previous session ----------------------------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const res = await loadLibrary();
+      if (cancelled) return;
+      if (!res || !res.data.length) { setHydrated(true); return; }
+      // Best-effort restore even when schema versions differ: our LoadedFile
+      // shape is forward-tolerant (extra fields ignored, missing ones default).
+      // If buildLibrary actually throws we drop back to the launcher cleanly.
+      try {
+        const lib = buildLibrary(res.data);
+        setLoadedFiles(res.data);
+        setLibrary(lib);
+        if (lib.sessions.length) setSelection({ type: "session", id: lib.sessions[0].id });
+        else if (lib.docs.length) setSelection({ type: "doc", id: lib.docs[0].name });
+        setRestoreNotice(res.schema_match
+          ? { type: "restored", saved_at: res.saved_at }
+          : { type: "schema-mismatch", saved_at: res.saved_at, stored_version: res.stored_version });
+      } catch {
+        // Stored data is too incompatible to render — show the mismatch
+        // warning and leave the user on the launcher.
+        setRestoreNotice({ type: "schema-mismatch", saved_at: res.saved_at, stored_version: res.stored_version });
+      } finally {
+        setHydrated(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // -- save on change (debounced 500ms) ----------------------------------
+  useEffect(() => {
+    if (!hydrated) return; // never overwrite stored data with an empty initial state
+    const t = setTimeout(() => {
+      saveLibrary(loadedFiles)
+        .then((info) => {
+          if (info.trimmed > 0) {
+            // user-visible heads-up that we had to evict to fit quota
+            console.warn(`[store] LRU trimmed ${info.trimmed} file(s) to fit storage quota`);
+          }
+          notifyChange("save");
+        })
+        .catch((err) => console.warn("[store] save failed:", err));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [loadedFiles, hydrated]);
+
+  // -- cross-tab sync ----------------------------------------------------
+  useEffect(() => {
+    return onStoreChange((kind) => {
+      if (kind === "clear") {
+        // another tab nuked the store — drop our view too so we don't
+        // immediately overwrite the empty state on next save.
+        setLibrary(null); setLoadedFiles([]); setSelection(null); setRestoreNotice(null);
+      } else if (kind === "save") {
+        loadLibrary().then((res) => {
+          if (!res || !res.data.length) return;
+          try {
+            const lib = buildLibrary(res.data);
+            setLoadedFiles(res.data);
+            setLibrary(lib);
+          } catch { /* ignore: other tab wrote incompatible data */ }
+        });
+      }
+    });
+  }, []);
 
   async function onFiles(files: FileList | File[]) {
     const arr = Array.from(files).filter((f) => /\.(md|markdown|txt|jsonl)$/i.test(f.name));
@@ -66,7 +147,6 @@ export default function App() {
           });
           return { name: res.name, fm: res.fm, body: "", events: res.events, type: "transcript" };
         }
-        // markdown / txt: small, fine to read on main thread.
         update(idx, { status: "parsing" });
         const text = await file.text();
         const lf = loadFile(file.name, text);
@@ -86,15 +166,8 @@ export default function App() {
     const newlyLoaded = (await Promise.all(loaders)).filter(
       (f): f is LoadedFile => !!f && (f.body.trim().length > 0 || f.events.length > 0)
     );
+    if (!newlyLoaded.length) return;
 
-    if (!newlyLoaded.length) {
-      // Leave the progress view up so the user can read errors and retry.
-      return;
-    }
-
-    // Accumulate: re-building over all loaded files keeps sidebar grouping right
-    // (same session_id transcripts merge across drops; jsonls with different sids
-    // appear as additional sessions).
     const merged = [...loadedFiles, ...newlyLoaded];
     setLoadedFiles(merged);
     const lib = buildLibrary(merged);
@@ -102,8 +175,10 @@ export default function App() {
     setProgress(null);
     handlesRef.current = [];
 
-    // Auto-select something the user just dropped, so the second drop actually
-    // surfaces in the main pane (and doesn't silently land in the sidebar).
+    // A fresh drop is an explicit action — clear the "restored" notice so the
+    // topbar isn't lying about where the visible data came from.
+    setRestoreNotice(null);
+
     const newIds = new Set(
       newlyLoaded.map((f) => (f.fm.session_id as string) || f.name).filter(Boolean)
     );
@@ -117,9 +192,7 @@ export default function App() {
   }
 
   function cancelParsing() {
-    for (const h of handlesRef.current) {
-      try { h.cancel(); } catch { /* noop */ }
-    }
+    for (const h of handlesRef.current) { try { h.cancel(); } catch { /* */ } }
     handlesRef.current = [];
     setProgress(null);
   }
@@ -129,11 +202,15 @@ export default function App() {
     setLoadedFiles([]);
     setSelection(null);
     setProgress(null);
+    setRestoreNotice(null);
   }
 
-  // Shell-level drag handlers — let the user drop more files onto the viewer
-  // itself. dragenter/dragleave can fire repeatedly as the cursor moves over
-  // child nodes, so we count depth instead of toggling on a single event.
+  async function clearStored() {
+    await clearLibrary();
+    notifyChange("clear");
+    resetToLauncher();
+  }
+
   const shellDragHandlers = {
     onDragEnter: (e: React.DragEvent) => {
       if (!e.dataTransfer?.types?.includes("Files")) return;
@@ -160,9 +237,6 @@ export default function App() {
     },
   };
 
-  // Progress shown full-screen on the *initial* parse, but as a small floating
-  // modal once a library is already in view, so the viewer stays visible while
-  // additional files load.
   if (progress && !library) return <ProgressView items={progress} onCancel={cancelParsing} />;
   if (!library) return <Launcher onFiles={onFiles} />;
 
@@ -174,6 +248,9 @@ export default function App() {
       <div className="topbar">
         <span className="brand">💬 Transcript Viewer</span>
         <span className="count">{library.sessions.length} sessions · {library.docs.length} docs</span>
+        {restoreNotice && (
+          <RestoreChip notice={restoreNotice} onClear={clearStored} onDismiss={() => setRestoreNotice(null)} />
+        )}
         <span className="grow" />
         <span className="topbar-hint">파일을 추가로 끌어다 놓으면 사이드바에 추가됩니다</span>
         <button onClick={resetToLauncher}>← 새로 열기</button>
@@ -218,4 +295,36 @@ export default function App() {
       )}
     </div>
   );
+}
+
+function RestoreChip({
+  notice,
+  onClear,
+  onDismiss,
+}: { notice: RestoreNotice; onClear: () => void; onDismiss: () => void }) {
+  if (notice.type === "schema-mismatch") {
+    return (
+      <span className="restore-chip warn" title="저장된 데이터가 옛 schema라 일부 항목이 어색할 수 있습니다.">
+        ⚠️ 이전 버전 (v{notice.stored_version} → v{SCHEMA_VERSION})
+        <button onClick={onClear}>지우기</button>
+        <button onClick={onDismiss}>닫기</button>
+      </span>
+    );
+  }
+  return (
+    <span className="restore-chip" title={new Date(notice.saved_at).toLocaleString()}>
+      지난번 데이터 · {fmtAgo(notice.saved_at)}
+      <button onClick={onClear}>지우기</button>
+      <button onClick={onDismiss}>닫기</button>
+    </span>
+  );
+}
+
+function fmtAgo(ts: number): string {
+  if (!ts) return "이전";
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return "방금";
+  if (s < 3600) return `${Math.floor(s / 60)}분 전`;
+  if (s < 86400) return `${Math.floor(s / 3600)}시간 전`;
+  return `${Math.floor(s / 86400)}일 전`;
 }
