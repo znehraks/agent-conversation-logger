@@ -289,6 +289,102 @@ function processCodexRow(row: any, s: CodexState): void {
     if (total) { s.latestTotal = total; s.latestUsageTs = ts || s.latestUsageTs; }
     return;
   }
+  if (rowType === "event_msg" && payload) {
+    // MCP tool calls, apply_patch file edits, and web searches arrive as
+    // event_msg records that bundle both the invocation and its result. Expand
+    // each into TOOL CALL + TOOL OUTPUT so they show up in the transcript.
+    if (payload.type === "mcp_tool_call_end") {
+      const callId = String(payload.call_id || "");
+      const invocation = (payload.invocation && typeof payload.invocation === "object") ? payload.invocation : {};
+      const server = invocation.server, tool = invocation.tool;
+      const name = (server && tool) ? `mcp:${server}/${tool}` : (tool || "mcp_tool");
+      const args = invocation.arguments;
+      const argsText = args === undefined ? "" : JSON.stringify(args);
+      const result = (payload.result && typeof payload.result === "object") ? payload.result : {};
+      const ok = "Ok" in result;
+      let outputText = "";
+      if (ok) {
+        const content = result.Ok?.content;
+        if (Array.isArray(content)) {
+          outputText = content
+            .filter((c: any) => c && typeof c === "object" && c.type === "text")
+            .map((c: any) => String(c.text || ""))
+            .join("\n");
+        } else if (content != null) {
+          outputText = JSON.stringify(content);
+        }
+      } else {
+        outputText = JSON.stringify(result);
+      }
+      if (callId && name) s.callNames[callId] = name;
+      s.events.push(ev({
+        ts, kind: "TOOL CALL", ident: name,
+        meta: callId ? [{ key: "call_id", value: `\`${callId}\`` }] : [],
+        blocks: [{ lang: "json", text: redact(argsText) }],
+      }));
+      const meta: { key: string; value: string }[] = [];
+      if (callId) meta.push({ key: "call_id", value: `\`${callId}\`` });
+      meta.push({ key: "exit_code", value: ok ? "`0`" : "`1`" });
+      meta.push({ key: "tool_name", value: `\`${name}\`` });
+      if (!ok) meta.push({ key: "is_error", value: "`true`" });
+      s.events.push(ev({
+        ts, kind: "TOOL OUTPUT",
+        ident: `${name} (${callId})`,
+        meta,
+        blocks: [{ lang: "text", text: redact(outputText) }],
+      }));
+      return;
+    }
+    if (payload.type === "patch_apply_end") {
+      const callId = String(payload.call_id || "");
+      const changes = (payload.changes && typeof payload.changes === "object") ? payload.changes : {};
+      const success = !!payload.success;
+      const stdout = String(payload.stdout || ""), stderr = String(payload.stderr || "");
+      const lines: string[] = [];
+      for (const [p, info] of Object.entries(changes)) {
+        const k = (info as any)?.type || "?";
+        lines.push(`${k}: ${p}`);
+      }
+      const callText = lines.length ? lines.join("\n") : JSON.stringify(changes);
+      const outputText = stderr ? `${stdout}\n--- stderr ---\n${stderr}` : stdout;
+      const name = "apply_patch";
+      if (callId) s.callNames[callId] = name;
+      s.events.push(ev({
+        ts, kind: "TOOL CALL", ident: name,
+        meta: callId ? [{ key: "call_id", value: `\`${callId}\`` }] : [],
+        blocks: [{ lang: "text", text: redact(callText) }],
+      }));
+      const meta: { key: string; value: string }[] = [];
+      if (callId) meta.push({ key: "call_id", value: `\`${callId}\`` });
+      meta.push({ key: "exit_code", value: success ? "`0`" : "`1`" });
+      meta.push({ key: "tool_name", value: `\`${name}\`` });
+      if (!success) meta.push({ key: "is_error", value: "`true`" });
+      s.events.push(ev({
+        ts, kind: "TOOL OUTPUT",
+        ident: `${name} (${callId})`,
+        meta,
+        blocks: [{ lang: "text", text: redact(outputText) }],
+      }));
+      return;
+    }
+    if (payload.type === "web_search_end") {
+      const callId = String(payload.call_id || "");
+      const action = (payload.action && typeof payload.action === "object") ? payload.action : null;
+      const queries: string[] | null = action && Array.isArray(action.queries) ? action.queries : null;
+      const bodyText = queries && queries.length
+        ? queries.map((q: any) => String(q)).join("\n")
+        : String(payload.query || "");
+      const name = "web_search";
+      if (callId) s.callNames[callId] = name;
+      s.events.push(ev({
+        ts, kind: "TOOL CALL", ident: name,
+        meta: callId ? [{ key: "call_id", value: `\`${callId}\`` }] : [],
+        blocks: [{ lang: "text", text: redact(bodyText) }],
+      }));
+      return;
+    }
+    return;
+  }
   if (rowType !== "response_item") return;
 
   if (payload.type === "message") {

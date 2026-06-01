@@ -343,23 +343,21 @@ def append_live_session_file(path: Path, output_root: Path, excerpt_chars: int =
                 latest_total = total
                 latest_usage_ts = row.get("timestamp") or latest_usage_ts
             continue
-        event = row_to_live_event(row, session_id, path, excerpt_chars)
-        if not event:
-            continue
-        # Persist call_id → tool name so TOOL OUTPUT sections can display
-        # `name (call_id)` instead of a bare hash; mapping survives across hooks
-        # via the state file.
-        if event.get("kind") == "tool_call":
-            cid = event.get("call_id")
-            name = event.get("name")
-            if cid and name:
-                call_names[str(cid)] = str(name)
-        elif event.get("kind") == "tool_output" and not event.get("name"):
-            cid = event.get("call_id")
-            if cid and str(cid) in call_names:
-                event["name"] = call_names[str(cid)]
-        events.append(event)
-        markdown_chunks.append(live_event_to_markdown(event))
+        for event in row_to_live_events(row, session_id, path, excerpt_chars):
+            # Persist call_id → tool name so TOOL OUTPUT sections can display
+            # `name (call_id)` instead of a bare hash; mapping survives across
+            # hooks via the state file.
+            if event.get("kind") == "tool_call":
+                cid = event.get("call_id")
+                name = event.get("name")
+                if cid and name:
+                    call_names[str(cid)] = str(name)
+            elif event.get("kind") == "tool_output" and not event.get("name"):
+                cid = event.get("call_id")
+                if cid and str(cid) in call_names:
+                    event["name"] = call_names[str(cid)]
+            events.append(event)
+            markdown_chunks.append(live_event_to_markdown(event))
 
     # Emit one delta USAGE section for this batch (cumulative now − cumulative stored).
     usage_cumulative = source_record.get("usage_cumulative") or {}
@@ -585,6 +583,103 @@ def row_to_live_event(row: dict[str, Any], session_id: str, source_path: Path, e
             "output_excerpt": redact_and_limit(output, excerpt_chars),
         }
     return None
+
+
+def row_to_live_events(row: dict[str, Any], session_id: str, source_path: Path, excerpt_chars: int) -> list[dict[str, Any]]:
+    """Expand one raw Codex row into 0+ live events.
+
+    Wraps :func:`row_to_live_event` for the single-event response_item paths,
+    then layers on the event_msg side: Codex emits MCP tool calls, ``apply_patch``
+    file edits, and web searches as ``event_msg`` records (not response_items),
+    each carrying both the invocation and the result. We surface each one as a
+    TOOL CALL + TOOL OUTPUT pair so the transcript reflects what the agent
+    actually did, matching the in-browser raw-jsonl parsers.
+    """
+    base_event = row_to_live_event(row, session_id, source_path, excerpt_chars)
+    if base_event is not None:
+        return [base_event]
+
+    if row.get("type") != "event_msg":
+        return []
+    payload = row.get("payload") or {}
+    if not isinstance(payload, dict):
+        return []
+    timestamp = row.get("timestamp")
+    base = {
+        "schema_version": 1,
+        "session_id": session_id,
+        "source_path": str(source_path),
+        "timestamp": timestamp,
+    }
+    pt = payload.get("type")
+
+    if pt == "mcp_tool_call_end":
+        call_id = str(payload.get("call_id") or "")
+        invocation = payload.get("invocation") or {}
+        server = invocation.get("server") if isinstance(invocation, dict) else None
+        tool = invocation.get("tool") if isinstance(invocation, dict) else None
+        name = f"mcp:{server}/{tool}" if (server and tool) else (tool or "mcp_tool")
+        args = invocation.get("arguments") if isinstance(invocation, dict) else None
+        args_text = json.dumps(args, ensure_ascii=False) if args is not None else ""
+        result = payload.get("result") or {}
+        ok = isinstance(result, dict) and "Ok" in result
+        if ok:
+            content = (result.get("Ok") or {}).get("content")
+            if isinstance(content, list):
+                output_text = "\n".join(
+                    c.get("text", "") for c in content
+                    if isinstance(c, dict) and c.get("type") == "text"
+                )
+            else:
+                output_text = json.dumps(content, ensure_ascii=False) if content is not None else ""
+        else:
+            output_text = json.dumps(result, ensure_ascii=False) if result else ""
+        return [
+            {**base, "kind": "tool_call", "name": name, "call_id": call_id,
+             "command": None,
+             "arguments": redact_and_limit(args_text, excerpt_chars)},
+            {**base, "kind": "tool_output", "name": name, "call_id": call_id,
+             "exit_code": 0 if ok else 1,
+             "output_excerpt": redact_and_limit(output_text, excerpt_chars)},
+        ]
+
+    if pt == "patch_apply_end":
+        call_id = str(payload.get("call_id") or "")
+        changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else {}
+        success = bool(payload.get("success"))
+        stdout = str(payload.get("stdout") or "")
+        stderr = str(payload.get("stderr") or "")
+        change_lines = []
+        for path_key, info in (changes or {}).items():
+            kind = info.get("type", "?") if isinstance(info, dict) else "?"
+            change_lines.append(f"{kind}: {path_key}")
+        call_text = "\n".join(change_lines) if change_lines else json.dumps(changes, ensure_ascii=False)
+        output_text = stdout if not stderr else f"{stdout}\n--- stderr ---\n{stderr}"
+        return [
+            {**base, "kind": "tool_call", "name": "apply_patch", "call_id": call_id,
+             "command": None,
+             "arguments": redact_and_limit(call_text, excerpt_chars)},
+            {**base, "kind": "tool_output", "name": "apply_patch", "call_id": call_id,
+             "exit_code": 0 if success else 1,
+             "output_excerpt": redact_and_limit(output_text, excerpt_chars)},
+        ]
+
+    if pt == "web_search_end":
+        call_id = str(payload.get("call_id") or "")
+        query = str(payload.get("query") or "")
+        action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
+        queries = action.get("queries") if isinstance(action, dict) else None
+        if isinstance(queries, list) and queries:
+            body_text = "\n".join(str(q) for q in queries)
+        else:
+            body_text = query
+        return [
+            {**base, "kind": "tool_call", "name": "web_search", "call_id": call_id,
+             "command": None,
+             "arguments": redact_and_limit(body_text, excerpt_chars)},
+        ]
+
+    return []
 
 
 def live_event_to_markdown(event: dict[str, Any]) -> str:
