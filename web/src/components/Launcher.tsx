@@ -65,7 +65,7 @@ export function Launcher({ onFiles }: { onFiles: (files: FileList | File[]) => v
         </div>
 
         <p className="hint">
-          🔒 로컬에서만 처리 · 여러 파일 동시 OK · 회전 파트 자동 연결
+          🔒 로컬에서만 처리 · 여러 파일 한 번에 OK · 큰 세션이 여러 파일로 쪼개져 있어도 자동 연결
         </p>
         <p className="hint subtle">
           자동 적재 원하면{" "}
