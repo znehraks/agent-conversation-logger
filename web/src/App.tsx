@@ -5,32 +5,109 @@ import { Sidebar, Selection } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { InsightsView } from "./components/InsightsView";
 import { DocumentView } from "./components/DocumentView";
+import { ProgressView, ProgressItem } from "./components/ProgressView";
 import { buildLibrary, loadFile, Library, LoadedFile } from "./lib/classify";
+import { isJsonl, parseJsonlFile, ParseHandle } from "./lib/jsonlClient";
 
 export default function App() {
   const [library, setLibrary] = useState<Library | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [tab, setTab] = useState<"chat" | "insights">("chat");
+  const [progress, setProgress] = useState<ProgressItem[] | null>(null);
+  const handlesRef = useRef<ParseHandle[]>([]);
   const virtuoso = useRef<VirtuosoHandle>(null);
 
   async function onFiles(files: FileList | File[]) {
-    const arr = Array.from(files).filter((f) => /\.(md|markdown|txt)$/i.test(f.name));
-    const loaded: LoadedFile[] = await Promise.all(
-      arr.map((f) => new Promise<LoadedFile>((res) => {
-        const r = new FileReader();
-        r.onload = () => res(loadFile(f.name, String(r.result)));
-        r.onerror = () => res(loadFile(f.name, ""));
-        r.readAsText(f, "utf-8");
-      }))
+    const arr = Array.from(files).filter((f) => /\.(md|markdown|txt|jsonl)$/i.test(f.name));
+    if (!arr.length) return;
+
+    const items: ProgressItem[] = arr.map((f) => ({
+      name: f.name,
+      size: f.size,
+      bytes: 0,
+      rows: 0,
+      events: 0,
+      status: "queued",
+    }));
+    setProgress(items);
+    handlesRef.current = [];
+
+    const update = (idx: number, patch: Partial<ProgressItem>) => {
+      setProgress((prev) => {
+        if (!prev) return prev;
+        const next = prev.slice();
+        next[idx] = { ...next[idx], ...patch };
+        return next;
+      });
+    };
+
+    const loaders = arr.map(async (file, idx): Promise<LoadedFile | null> => {
+      try {
+        if (isJsonl(file)) {
+          update(idx, { status: "parsing" });
+          const handle = parseJsonlFile(file, (p) => {
+            update(idx, {
+              status: "parsing",
+              bytes: p.bytes,
+              rows: p.rows,
+              events: p.events,
+            });
+          });
+          handlesRef.current.push(handle);
+          const res = await handle.promise;
+          update(idx, {
+            status: "done",
+            bytes: file.size,
+            rows: res.rows,
+            events: res.events.length,
+          });
+          return { name: res.name, fm: res.fm, body: "", events: res.events, type: "transcript" };
+        }
+        // markdown / txt: small, fine to read on main thread.
+        update(idx, { status: "parsing" });
+        const text = await file.text();
+        const lf = loadFile(file.name, text);
+        update(idx, {
+          status: "done",
+          bytes: file.size,
+          rows: 0,
+          events: lf.events.length,
+        });
+        return lf;
+      } catch (err: any) {
+        update(idx, { status: "error", message: String(err?.message || err) });
+        return null;
+      }
+    });
+
+    const loaded = (await Promise.all(loaders)).filter(
+      (f): f is LoadedFile => !!f && (f.body.trim().length > 0 || f.events.length > 0)
     );
-    const lib = buildLibrary(loaded.filter((f) => f.body.trim() || f.events.length));
+
+    if (!loaded.length) {
+      // Leave the progress view up so the user can read errors and retry.
+      return;
+    }
+
+    const lib = buildLibrary(loaded);
     setLibrary(lib);
+    setProgress(null);
+    handlesRef.current = [];
     if (lib.sessions.length) setSelection({ type: "session", id: lib.sessions[0].id });
     else if (lib.docs.length) setSelection({ type: "doc", id: lib.docs[0].name });
     else setSelection(null);
     setTab("chat");
   }
 
+  function cancelParsing() {
+    for (const h of handlesRef.current) {
+      try { h.cancel(); } catch { /* noop */ }
+    }
+    handlesRef.current = [];
+    setProgress(null);
+  }
+
+  if (progress) return <ProgressView items={progress} onCancel={cancelParsing} />;
   if (!library) return <Launcher onFiles={onFiles} />;
 
   const session = selection?.type === "session" ? library.sessions.find((s) => s.id === selection.id) : null;

@@ -17,23 +17,64 @@ export function Launcher({ onFiles }: { onFiles: (files: FileList | File[]) => v
     >
       <div className={`drop-card${drag ? " drag" : ""}`}>
         <div className="emoji">🗨️</div>
-        <h1>Transcript Viewer</h1>
-        <p>
-          <code>transcript.md</code> (대화) 와 <code>*.eval.md</code> (보고서) 를<br />
-          <b>여러 개 한꺼번에</b> 끌어다 놓으세요. 같은 세션의 회전 파트들은 자동으로 이어집니다.
+        <h1>Agent Conversation Viewer</h1>
+        <p className="lead">
+          Codex · Claude Code 대화 로그를 메신저 UI로.
+          <br />
+          <b>파일을 끌어다 놓기만</b> 하면 됩니다.
         </p>
-        <label className="file-btn">
-          파일 선택
-          <input ref={fileRef} type="file" accept=".md,.markdown,.txt" multiple hidden
-            onChange={(e) => e.target.files && onFiles(e.target.files)} />
-        </label>
-        <label className="file-btn ghost">
-          폴더 선택
-          {/* @ts-expect-error non-standard attribute */}
-          <input ref={dirRef} type="file" webkitdirectory="" directory="" multiple hidden
-            onChange={(e) => e.target.files && onFiles(e.target.files)} />
-        </label>
-        <p className="hint">로컬에서만 읽힙니다 — 어떤 파일도 업로드되지 않습니다.</p>
+
+        <div className="modes">
+          <div className="mode mode-primary">
+            <div className="mode-head">
+              <span className="mode-badge">설치 없이</span>
+              <h3>에이전트가 만든 원본 <code>.jsonl</code> 그대로</h3>
+            </div>
+            <p className="mode-desc">로거를 안 깔아도 됩니다. 다음 경로의 파일을 그대로 드롭하세요.</p>
+            <dl className="paths">
+              <dt>Claude Code</dt>
+              <dd><code>~/.claude/projects/&lt;프로젝트&gt;/&lt;sid&gt;.jsonl</code></dd>
+              <dt>Codex</dt>
+              <dd><code>~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl</code></dd>
+            </dl>
+          </div>
+
+          <div className="mode">
+            <div className="mode-head">
+              <span className="mode-badge ghost">이미 적재 중</span>
+              <h3>로거가 만든 정제 파일</h3>
+            </div>
+            <p className="mode-desc">
+              vault에 이미 쌓아두고 있다면 <code>transcript.md</code> / <code>transcript.NNN.md</code> / <code>*.eval.md</code> 어느 것이든.
+            </p>
+          </div>
+        </div>
+
+        <div className="cta">
+          <label className="file-btn">
+            파일 선택
+            <input ref={fileRef} type="file" accept=".md,.markdown,.txt,.jsonl" multiple hidden
+              onChange={(e) => e.target.files && onFiles(e.target.files)} />
+          </label>
+          <label className="file-btn ghost">
+            폴더 선택
+            {/* @ts-expect-error non-standard attribute */}
+            <input ref={dirRef} type="file" webkitdirectory="" directory="" multiple hidden
+              onChange={(e) => e.target.files && onFiles(e.target.files)} />
+          </label>
+        </div>
+
+        <p className="hint">
+          🔒 로컬에서만 읽힙니다 — 어떤 파일도 업로드되지 않습니다.
+          <br />
+          여러 개 한꺼번에 OK · 같은 세션의 회전 파트는 자동으로 이어집니다.
+        </p>
+        <p className="hint subtle">
+          매번 드롭하는 게 번거롭다면 로거를 깔아 vault에 자동 적재할 수 있어요{" "}
+          <a href="https://github.com/znehraks/agent-conversation-logger" target="_blank" rel="noreferrer">
+            GitHub 설치 가이드 →
+          </a>
+        </p>
       </div>
     </div>
   );

@@ -1,4 +1,5 @@
 import { Ev, Frontmatter, inferAgent, parseEvents, parseFrontmatter } from "./parse";
+import { parseRawJsonl } from "./raw_jsonl";
 
 export type FileType = "transcript" | "document" | "ambiguous";
 
@@ -43,6 +44,15 @@ export function partRank(filename: string): number {
 }
 
 export function loadFile(name: string, text: string): LoadedFile {
+  // Raw rollout / Claude session jsonl — parsed in-browser to the same Ev[]
+  // shape, so users without the logger installed can drop their agent's
+  // native files directly.
+  if (/\.jsonl$/i.test(name || "")) {
+    const parsed = parseRawJsonl(text);
+    if (parsed && parsed.events.length) {
+      return { name, fm: parsed.fm, body: "", events: parsed.events, type: "transcript" };
+    }
+  }
   const [fm, body] = parseFrontmatter(text);
   const events = parseEvents(body);
   let type = classifyFile(name, fm);
