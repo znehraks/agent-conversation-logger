@@ -13,7 +13,9 @@
     --system-bg: #3a2f15; --system-fg: #ffd591;
     --tool-bg: #1f2640; --tool-border: #344675; --tool-fg: #adb6ff;
     --output-bg: #16321f; --output-border: #2e6f3b; --output-fg: #b4eabd;
-    --code-bg: #0f1115; --chip-bg: #2a2d33; --chip-fg: #c0c4cc; --accent: #4dabff;
+    --code-bg: #0f1115; --chip-bg: #2a2d33; --chip-fg: #c0c4cc;
+    /* accent는 다크 배경 위에서 충분히 빛나도록 한 단계 더 밝게 */
+    --accent: #7cc4ff;
   }
 }
 * { box-sizing: border-box; }
@@ -162,6 +164,10 @@ details[open] .caret { transform: rotate(90deg); }
 .mode-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
 .mode-head h3 { margin: 0; font-size: 14.5px; font-weight: 600; line-height: 1.4; }
 .mode-badge { font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--accent); color: #fff; letter-spacing: .02em; }
+@media (prefers-color-scheme: dark) {
+  /* accent가 밝아진 다크모드에선 흰 글씨가 흐려져 보여서 배지 글씨를 어두운 배경색으로 뒤집어준다 */
+  .mode-badge { color: #0e1621; }
+}
 .mode-badge.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 .mode-desc { font-size: 12.5px; color: var(--muted); margin: 0 0 8px; line-height: 1.55; }
 .mode code { background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 5px; font-family: ui-monospace, Menlo, monospace; font-size: .88em; }

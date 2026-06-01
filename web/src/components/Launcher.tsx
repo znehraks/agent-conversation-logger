@@ -65,14 +65,12 @@ export function Launcher({ onFiles }: { onFiles: (files: FileList | File[]) => v
         </div>
 
         <p className="hint">
-          🔒 로컬에서만 읽힙니다 — 어떤 파일도 업로드되지 않습니다.
-          <br />
-          여러 개 한꺼번에 OK · 같은 세션의 회전 파트는 자동으로 이어집니다.
+          🔒 로컬에서만 처리 · 여러 파일 동시 OK · 회전 파트 자동 연결
         </p>
         <p className="hint subtle">
-          매번 드롭하는 게 번거롭다면 로거를 깔아 vault에 자동 적재할 수 있어요{" "}
+          자동 적재 원하면{" "}
           <a href="https://github.com/znehraks/agent-conversation-logger" target="_blank" rel="noreferrer">
-            GitHub 설치 가이드 →
+            GitHub 가이드 →
           </a>
         </p>
       </div>
