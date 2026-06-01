@@ -203,3 +203,35 @@ details[open] .caret { transform: rotate(90deg); }
 .prog-bar .bar.err { background: #e5484d; }
 .prog-row-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
 .prog-err { color: #e5484d; margin-top: 6px; font-family: ui-monospace, Menlo, monospace; }
+
+/* ---- shell drop-to-add overlay + floating progress modal ---- */
+.topbar-hint { font-size: 11px; color: var(--muted); margin-right: 10px; }
+@media (max-width: 720px) { .topbar-hint { display: none; } }
+
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 14%, rgba(0,0,0,0.35));
+  pointer-events: none;
+  animation: dropFade .12s ease-out;
+}
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .drop-overlay { background: rgba(43,135,255,0.18); }
+}
+.drop-overlay-card {
+  background: var(--surface); color: var(--text);
+  border: 2px dashed var(--accent); border-radius: 16px;
+  padding: 22px 30px; font-size: 17px; font-weight: 600;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+}
+@keyframes dropFade { from { opacity: 0; } to { opacity: 1; } }
+
+.progress-modal {
+  position: fixed; inset: 0; z-index: 180;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(2px);
+  padding: 20px;
+}
+.progress-modal .launcher { background: transparent; padding: 0; }
+.progress-modal .progress-card { box-shadow: 0 20px 60px rgba(0,0,0,0.45); max-height: 80vh; overflow-y: auto; }
